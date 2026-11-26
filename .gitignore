@@ -1,0 +1,29 @@
+# Environment / secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Node / frontend
+node_modules/
+dist/
+*.local
+
+# Databases and persistent data (never in git)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Logs and temp
+logs/
+*.log
+tmp/
+
+# OS
+.DS_Store
+Thumbs.db
