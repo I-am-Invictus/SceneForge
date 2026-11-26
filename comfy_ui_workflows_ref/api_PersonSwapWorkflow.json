@@ -1,0 +1,480 @@
+{
+  "1": {
+    "inputs": {
+      "note": "{\"v\": 1, \"title\": \"Qwen Image 2.1 Person Swap\", \"subtitle\": \"Put your character into another photo, or swap only the head. It works when other people are in the photo too.\", \"author\": \"AusBoss\", \"layout\": \"card\", \"accent\": \"\", \"body\": \"[▶ AusBoss on YouTube](https://www.youtube.com/@ausbossdev) · videos on these nodes and workflows\\n\\n[▶ AusBoss on Discord](https://discord.gg/RwVxY9Fuaj) · need help, have a suggestion, or want more workflows?\\n\\n---\\n\\n1. Load the scene picture.\\n2. Load your character.\\n3. Say who to replace. One person in the photo: leave \\\"the person\\\", or write \\\"the woman\\\" or \\\"the woman's head and hair\\\" or \\\"the man\\\". More people: say where they stand, \\\"the woman on the left\\\", or their hair, \\\"the woman with the braids\\\".\\n4. Press **Run**.\\n\\nWhole body: say who by where they stand or by their hair, not by their clothes. Clothes you name are kept.\\n\\nHead only: switch **Swap the whole body** off. The scene's clothes stay.\\n\\nSecond character: select the **Second character** nodes and press Ctrl+B. Load the picture and say who it replaces.\\n\\n**Add to the request** holds three sentences that fix common problems: old clothes that stay, extra hands, and objects that follow the character in. It starts off; select it and press Ctrl+B to turn it on.\\n\\n**Speed LoRA** (optional): switch on its row in both swap LoRA Loaders and set **Steps** to 8 for about 3 times faster runs.\\n\\nUse a character picture on a plain background that shows the outfit from head to knees, with the hands down. A picture that stops at the chest can leave the scene's old legs and shoes. A hand on the face or a peace sign can carry over and add an extra arm.\\n\\nKeep signs and cups out of the character picture. They can follow the person into the scene.\\n\\nFaces get less accurate when the person is small in the picture.\\n\\nIf one person comes out wrong, change the seed.\\n\\nOnly use pictures of people who agreed to it.\\n\\nThe BFS LoRAs are by Alissonerdx.\\n\\nNeeds AusBoss nodes 2.5.1 or newer (update first).\", \"models\": [{\"name\": \"qwen_image_2.1_int8_convrot.safetensors\", \"dir\": \"diffusion_models\", \"size\": \"7.26 GB\", \"url\": \"https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/diffusion_models/qwen_image_2.1_int8_convrot.safetensors\", \"note\": \"\"}, {\"name\": \"qwen3vl_8b_int8_convrot.safetensors\", \"dir\": \"text_encoders\", \"size\": \"9.35 GB\", \"url\": \"https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/text_encoders/qwen3vl_8b_int8_convrot.safetensors\", \"note\": \"\"}, {\"name\": \"qwen_image_2.1_vae_bf16.safetensors\", \"dir\": \"vae\", \"size\": \"676 MB\", \"url\": \"https://huggingface.co/Comfy-Org/Qwen-Image-2.1/resolve/main/vae/qwen_image_2.1_vae_bf16.safetensors\", \"note\": \"\"}, {\"name\": \"bfs_body_swap_v1.0_qwen_2.1.safetensors\", \"dir\": \"loras\", \"size\": \"210 MB\", \"url\": \"https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/resolve/main/bfs_body_swap_v1.0_qwen_2.1.safetensors\", \"note\": \"by Alissonerdx\"}, {\"name\": \"bfs_head_v1.1_qwen_2.1.safetensors\", \"dir\": \"loras\", \"size\": \"260 MB\", \"url\": \"https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/resolve/main/bfs_head_v1.1_qwen_2.1.safetensors\", \"note\": \"by Alissonerdx\"}, {\"name\": \"p_qwen_image_2.1_8step_v0.1-comfyui-T8.safetensors\", \"dir\": \"loras\", \"size\": \"336 MB\", \"url\": \"https://huggingface.co/t8star/Pruna-Qwen-Image-2.1-Comfy/resolve/main/p_qwen_image_2.1_8step_v0.1-comfyui-T8.safetensors\", \"note\": \"optional, 8 steps · Qwen Research License, research use\"}], \"packs\": [{\"name\": \"ComfyUI-AusBoss\", \"url\": \"https://github.com/ausboss/ComfyUI-AusBoss\", \"node\": \"AUSBOSS_NODES_LoraLoader\"}], \"links\": [{\"label\": \"YouTube · ausbossdev\", \"url\": \"https://www.youtube.com/@ausbossdev\"}, {\"label\": \"Discord · AusBoss\", \"url\": \"https://discord.gg/RwVxY9Fuaj\"}, {\"label\": \"BFS Best Face Swap · Alissonerdx\", \"url\": \"https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap\"}, {\"label\": \"GitHub · ausboss\", \"url\": \"https://github.com/ausboss\"}, {\"label\": \"Civitai · AusBoss\", \"url\": \"https://civitai.com/user/AusBoss\"}, {\"label\": \"X · Zanzibased\", \"url\": \"https://x.com/Zanzibased\"}]}"
+    },
+    "class_type": "AUSBOSS_NODES_WorkflowNote",
+    "_meta": {
+      "title": "🆎 AusBoss",
+      "cnr_id": "ausboss-nodes",
+      "ver": "2.5.1"
+    }
+  },
+  "2": {
+    "inputs": {
+      "image": "87777820_015_3373.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image - Scene picture",
+      "cnr_id": "comfy-core",
+      "ver": "0.38.0"
+    }
+  },
+  "3": {
+    "inputs": {
+      "image": "0010-10_w600.jpg"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Load Image - Character 1",
+      "cnr_id": "comfy-core",
+      "ver": "0.38.0"
+    }
+  },
+  "4": {
+    "inputs": {
+      "text": "Replace the women in the car"
+    },
+    "class_type": "AUSBOSS_NODES_Text",
+    "_meta": {
+      "title": "Text - Who to replace",
+      "cnr_id": "ausboss-nodes",
+      "ver": "2.5.1"
+    }
+  },
+  "5": {
+    "inputs": {
+      "value": true
+    },
+    "class_type": "PrimitiveBoolean",
+    "_meta": {
+      "title": "Boolean - Swap the whole body",
+      "cnr_id": "comfy-core",
+      "ver": "0.38.0"
+    }
+  },
+  "6": {
+    "inputs": {
+      "seed": 128379130583501
+    },
+    "class_type": "AUSBOSS_NODES_Seed",
+    "_meta": {
+      "title": "Seed",
+      "cnr_id": "ausboss-nodes",
+      "ver": "2.5.1"
+    }
+  },
+  "7": {
+    "inputs": {
+      "clip_name": "qwen3vl_8b_int8_convrot.safetensors",
+      "type": "qwen_image",
+      "device": "default"
+    },
+    "class_type": "CLIPLoader",
+    "_meta": {
+      "title": "Text encoder",
+      "cnr_id": "comfy-core",
+      "ver": "0.38.0"
+    }
+  },
+  "8": {
+    "inputs": {
+      "vae_name": "qwen_image_2.1_vae_bf16.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "VAE",
+      "cnr_id": "comfy-core",
+      "ver": "0.38.0"
+    }
+  },
+  "9": {
+    "inputs": {
+      "unet_name": "qwen_image_2.1_int8_convrot.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Diffusion model",
+      "cnr_id": "comfy-core",
+      "ver": "0.38.0"
+    }
+  },
+  "10": {
+    "inputs": {
+      "loras": "[{\"id\":\"rmwwj1wgr5\",\"name\":\"p_qwen_image_2.1_8step_v0.1-comfyui-T8.safetensors\",\"strength\":1,\"strength_clip\":1,\"enabled\":false,\"triggers\":\"\"},{\"id\":\"rmwwj1wgr6\",\"name\":\"bfs_body_swap_v1.0_qwen_2.1.safetensors\",\"strength\":1,\"strength_clip\":1,\"enabled\":true,\"triggers\":\"\"}]",
+      "trigger_separator": ", ",
+      "on_missing": "error",
+      "model": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "AUSBOSS_NODES_LoraLoader",
+    "_meta": {
+      "title": "LoRA Loader - Body swap LoRA",
+      "cnr_id": "ausboss-nodes",
+      "ver": "2.5.1"
+    }
+  },
+  "11": {
+    "inputs": {
+      "loras": "[{\"id\":\"rmwwj1wgs9\",\"name\":\"p_qwen_image_2.1_8step_v0.1-comfyui-T8.safetensors\",\"strength\":1,\"strength_clip\":1,\"enabled\":false,\"triggers\":\"\"},{\"id\":\"rmwwj1wgs10\",\"name\":\"bfs_head_v1.1_qwen_2.1.safetensors\",\"strength\":1,\"strength_clip\":1,\"enabled\":true,\"triggers\":\"\"}]",
+      "trigger_separator": ", ",
+      "on_missing": "error",
+      "model": [
+        "9",
+        0
+      ]
+    },
+    "class_type": "AUSBOSS_NODES_LoraLoader",
+    "_meta": {
+      "title": "LoRA Loader - Head swap LoRA",
+      "cnr_id": "ausboss-nodes",
+      "ver": "2.5.1"
+    }
+  },
+  "17": {
+    "inputs": {
+      "image_a": [
+        "16:50",
+        0
+      ],
+      "image_b": [
+        "16:40",
+        0
+      ]
+    },
+    "class_type": "AUSBOSS_NODES_Compare",
+    "_meta": {
+      "title": "Image Compare A/B - Before and after",
+      "cnr_id": "ausboss-nodes",
+      "ver": "2.5.1"
+    }
+  },
+  "18": {
+    "inputs": {
+      "filename_prefix": "qwen21_person_swap",
+      "format": "png",
+      "save_metadata": true,
+      "exact_name": "",
+      "on_existing": "overwrite",
+      "output_dir": "",
+      "caption": "",
+      "name_counter": true,
+      "name_date": false,
+      "name_time": false,
+      "name_size": false,
+      "name_batch": false,
+      "preview": true,
+      "step_preview": true,
+      "autosave": true,
+      "civitai_info": false,
+      "images": [
+        "17",
+        0
+      ]
+    },
+    "class_type": "AUSBOSS_NODES_SaveImage",
+    "_meta": {
+      "title": "Save Image",
+      "cnr_id": "ausboss-nodes",
+      "ver": "2.5.1"
+    }
+  },
+  "19": {
+    "inputs": {},
+    "class_type": "AUSBOSS_NODES_RunTimer",
+    "_meta": {
+      "title": "Run Timer",
+      "cnr_id": "ausboss-nodes",
+      "ver": "2.5.1"
+    }
+  },
+  "51": {
+    "inputs": {
+      "text": [
+        "15:24",
+        0
+      ]
+    },
+    "class_type": "AUSBOSS_NODES_ShowText",
+    "_meta": {
+      "title": "Show Text - Request sent to Qwen",
+      "cnr_id": "ausboss-nodes",
+      "ver": "2.5.1"
+    }
+  },
+  "53": {
+    "inputs": {
+      "value": 25
+    },
+    "class_type": "AUSBOSS_NODES_Integer",
+    "_meta": {
+      "title": "Integer - Steps",
+      "cnr_id": "ausboss-nodes",
+      "ver": "2.5.1"
+    }
+  },
+  "15:20": {
+    "inputs": {
+      "f_string": "body_swap: start with <image1> as the base image, keeping its lighting, environment, and background. replace the body of {a} from <image1> with the body from <image2>, strictly preserving the clothing, body shape and proportions from <image2>. copy the pose, direction of the eye, head rotation, micro expressions from <image1>. keep everyone else in <image1> exactly the same.",
+      "values.a": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "StringFormat",
+    "_meta": {
+      "title": "Whole body request",
+      "cnr_id": "comfy-core",
+      "ver": "0.38.0"
+    }
+  },
+  "15:21": {
+    "inputs": {
+      "f_string": "head_swap: start with <image1> as the base image, keeping its lighting, environment, and background. remove the head of {a} from <image1> completely and replace it with the head from <image2>, strictly preserving the hair, eye color, nose structure from <image2>. copy the direction of the eye, head rotation, micro expressions from <image1>. keep everyone else in <image1> exactly the same, high quality, sharp details, 4k",
+      "values.a": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "StringFormat",
+    "_meta": {
+      "title": "Head only request",
+      "cnr_id": "comfy-core",
+      "ver": "0.38.0"
+    }
+  },
+  "15:23": {
+    "inputs": {
+      "switch": [
+        "5",
+        0
+      ],
+      "on_false": [
+        "15:21",
+        0
+      ],
+      "on_true": [
+        "15:20",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Body or head request",
+      "cnr_id": "comfy-core",
+      "ver": "0.38.0"
+    }
+  },
+  "15:24": {
+    "inputs": {
+      "string": [
+        "15:23",
+        0
+      ],
+      "regex_pattern": " of\\s+(from <image1>.*?)\\. keep everyone else in <image1> exactly the same\\.?",
+      "replace": " \\1",
+      "case_insensitive": true,
+      "multiline": false,
+      "dotall": true,
+      "count": 1
+    },
+    "class_type": "RegexReplace",
+    "_meta": {
+      "title": "Empty who: one-person wording",
+      "cnr_id": "comfy-core",
+      "ver": "0.38.0"
+    }
+  },
+  "16:40": {
+    "inputs": {
+      "target_mode": "megapixels",
+      "width": 0,
+      "height": 0,
+      "edge_length": 1024,
+      "megapixels": 2,
+      "scale_factor": 0.5,
+      "keep_proportion": "fit",
+      "fill_color": "#000000",
+      "divisible_by": 32,
+      "interpolation": "lanczos",
+      "image": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "AUSBOSS_NODES_ImageResize",
+    "_meta": {
+      "title": "Image Resize - Scene to 2 MP",
+      "cnr_id": "ausboss-nodes",
+      "ver": "2.5.1"
+    }
+  },
+  "16:41": {
+    "inputs": {
+      "target_mode": "megapixels",
+      "width": 0,
+      "height": 0,
+      "edge_length": 1024,
+      "megapixels": 0.59,
+      "scale_factor": 0.5,
+      "keep_proportion": "fit",
+      "fill_color": "#ffffff",
+      "divisible_by": 32,
+      "interpolation": "lanczos",
+      "image": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "AUSBOSS_NODES_ImageResize",
+    "_meta": {
+      "title": "Image Resize - Character 1 to 0.59 MP",
+      "cnr_id": "ausboss-nodes",
+      "ver": "2.5.1"
+    }
+  },
+  "16:43": {
+    "inputs": {
+      "switch": [
+        "5",
+        0
+      ],
+      "on_false": [
+        "11",
+        0
+      ],
+      "on_true": [
+        "10",
+        0
+      ]
+    },
+    "class_type": "ComfySwitchNode",
+    "_meta": {
+      "title": "Body or head model",
+      "cnr_id": "comfy-core",
+      "ver": "0.38.0"
+    }
+  },
+  "16:44": {
+    "inputs": {
+      "device": "auto",
+      "dtype": "default",
+      "model": [
+        "16:43",
+        0
+      ]
+    },
+    "class_type": "QwenImage21Cache",
+    "_meta": {
+      "title": "Reference cache",
+      "cnr_id": "comfy-core",
+      "ver": "0.38.0"
+    }
+  },
+  "16:46": {
+    "inputs": {
+      "prompt": [
+        "15:24",
+        0
+      ],
+      "negative_prompt": "",
+      "resolution": 0,
+      "clip": [
+        "7",
+        0
+      ],
+      "images.image_1": [
+        "16:40",
+        0
+      ],
+      "images.image_2": [
+        "16:41",
+        0
+      ],
+      "vae": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "TextEncodeQwenImage21",
+    "_meta": {
+      "title": "Encode the pictures and the request",
+      "cnr_id": "comfy-core",
+      "ver": "0.38.0"
+    }
+  },
+  "16:48": {
+    "inputs": {
+      "seed": [
+        "6",
+        0
+      ],
+      "steps": [
+        "53",
+        0
+      ],
+      "cfg": 1,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 1,
+      "model": [
+        "16:44",
+        0
+      ],
+      "positive": [
+        "16:46",
+        0
+      ],
+      "negative": [
+        "16:46",
+        1
+      ],
+      "latent_image": [
+        "16:46",
+        2
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Sampler",
+      "cnr_id": "comfy-core",
+      "ver": "0.38.0"
+    }
+  },
+  "16:49": {
+    "inputs": {
+      "samples": [
+        "16:48",
+        0
+      ],
+      "vae": [
+        "8",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode",
+      "cnr_id": "comfy-core",
+      "ver": "0.38.0"
+    }
+  },
+  "16:50": {
+    "inputs": {
+      "image": [
+        "16:49",
+        0
+      ]
+    },
+    "class_type": "SplitImageWithAlpha",
+    "_meta": {
+      "title": "Drop the alpha channel",
+      "cnr_id": "comfy-core",
+      "ver": "0.38.0"
+    }
+  }
+}
