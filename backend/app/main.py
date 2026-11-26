@@ -6,12 +6,16 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.assets import router as assets_router
+from app.api.jobs import router as jobs_router
 from app.api.media import router as media_router
 from app.api.settings import router as settings_router
 from app.api.status import router as status_router
+from app.api.workflows import router as workflows_router
 from app.comfyui import comfyui_client
 from app.config import get_settings
-from app.database.db import init_db
+from app.database.db import SessionLocal, init_db
+from app.services import generation
+from app.services.monitor import job_monitor
 
 FRONTEND_DIST = (
     Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
@@ -22,7 +26,11 @@ FRONTEND_DIST = (
 async def lifespan(app: FastAPI):
     get_settings().ensure_data_dirs()
     init_db()
+    with SessionLocal() as db:
+        generation.sync_registry(db)
+    await job_monitor.start()
     yield
+    await job_monitor.stop()
     await comfyui_client.close()
 
 
@@ -32,6 +40,8 @@ app.include_router(status_router)
 app.include_router(settings_router)
 app.include_router(assets_router)
 app.include_router(media_router)
+app.include_router(workflows_router)
+app.include_router(jobs_router)
 
 if FRONTEND_DIST.is_dir():
     assets_dir = FRONTEND_DIST / "assets"

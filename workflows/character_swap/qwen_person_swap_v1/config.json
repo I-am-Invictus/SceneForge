@@ -1,0 +1,55 @@
+{
+  "id": "qwen_person_swap_v1",
+  "name": "Qwen Person Swap",
+  "category": "character_swap",
+  "version": 1,
+  "description": "Put a character into a scene (whole body or head only). One character per run.",
+  "inputs": {
+    "scene_image": {
+      "node_id": "2",
+      "input_name": "image",
+      "type": "image",
+      "required": true
+    },
+    "character_1": {
+      "node_id": "3",
+      "input_name": "image",
+      "type": "image",
+      "required": true
+    },
+    "composition_prompt": {
+      "node_id": "4",
+      "input_name": "text",
+      "type": "text",
+      "required": true
+    },
+    "swap_mode": {
+      "node_id": "5",
+      "input_name": "value",
+      "type": "boolean",
+      "required": false,
+      "default": true
+    },
+    "seed": {
+      "node_id": "6",
+      "input_name": "seed",
+      "type": "seed",
+      "required": false
+    },
+    "steps": {
+      "node_id": "53",
+      "input_name": "value",
+      "type": "number",
+      "required": false,
+      "default": 25
+    }
+  },
+  "outputs": {
+    "images": [
+      {
+        "node_id": "18",
+        "output_type": "images"
+      }
+    ]
+  }
+}

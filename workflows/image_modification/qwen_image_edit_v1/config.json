@@ -1,0 +1,77 @@
+{
+  "id": "qwen_image_edit_v1",
+  "name": "Qwen Image Edit",
+  "category": "image_modification",
+  "version": 1,
+  "description": "Instruction-based image modification with Qwen-Rapid-AIO (4-step sa_solver).",
+  "inputs": {
+    "source_image": {
+      "node_id": "8",
+      "input_name": "image",
+      "type": "image",
+      "required": true
+    },
+    "prompt": {
+      "node_id": "3",
+      "input_name": "prompt",
+      "type": "text",
+      "required": true
+    },
+    "negative_prompt": {
+      "node_id": "4",
+      "input_name": "prompt",
+      "type": "text",
+      "required": false,
+      "default": ""
+    },
+    "width": {
+      "node_id": "9",
+      "input_name": "width",
+      "type": "width",
+      "required": false,
+      "auto": "source"
+    },
+    "height": {
+      "node_id": "9",
+      "input_name": "height",
+      "type": "height",
+      "required": false,
+      "auto": "source"
+    },
+    "batch_size": {
+      "node_id": "9",
+      "input_name": "batch_size",
+      "type": "number",
+      "required": false,
+      "default": 1
+    },
+    "seed": {
+      "node_id": "2",
+      "input_name": "seed",
+      "type": "seed",
+      "required": false
+    },
+    "steps": {
+      "node_id": "2",
+      "input_name": "steps",
+      "type": "number",
+      "required": false,
+      "default": 4
+    },
+    "denoise": {
+      "node_id": "2",
+      "input_name": "denoise",
+      "type": "number",
+      "required": false,
+      "default": 1.0
+    }
+  },
+  "outputs": {
+    "images": [
+      {
+        "node_id": "30",
+        "output_type": "images"
+      }
+    ]
+  }
+}
