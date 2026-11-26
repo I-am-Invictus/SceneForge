@@ -173,7 +173,9 @@ async def submit_generation(
     db.refresh(job)
 
     try:
-        prompt_id = await comfyui_client.submit_prompt(base_url, workflow, client_id)
+        prompt_id = await comfyui_client.submit_prompt(
+            base_url, workflow, comfyui_client.monitor_client_id
+        )
     except ComfyUIError as exc:
         job.status = "failed"
         job.error = str(exc)

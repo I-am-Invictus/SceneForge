@@ -23,6 +23,11 @@ class ComfyUIClient:
     def __init__(self) -> None:
         self._clients: dict[str, httpx.AsyncClient] = {}
         self._object_info_cache: dict[str, tuple[float, dict]] = {}
+        # One stable client id for the whole process. ComfyUI routes
+        # execution_start/success/error to the client_id that submitted the
+        # prompt, so the monitor's WS must connect with this same id and every
+        # prompt must be submitted with it, or those events are lost.
+        self.monitor_client_id = uuid.uuid4().hex
 
     def _client(self, base_url: str) -> httpx.AsyncClient:
         client = self._clients.get(base_url)

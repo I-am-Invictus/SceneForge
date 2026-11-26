@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 
 import websockets
 from sqlalchemy import select
@@ -13,15 +14,18 @@ from app.services import generation
 from app.services.settings import get_effective_settings
 
 RECONNECT_DELAY = 2.0
+RESYNC_INTERVAL = 8.0
 
 
 class JobMonitor:
     """Watches ComfyUI's WebSocket and drives SceneForge job state.
 
-    A single shared connection receives all client events; messages are
-    routed to jobs by prompt_id. On (re)connect, jobs with no ComfyUI
-    trace are reconciled against the queue/history so restarts and
-    disconnects never leave jobs stuck.
+    Connects with the process-wide ``monitor_client_id`` so ComfyUI routes
+    execution_start/success/error to this socket (events are addressed to the
+    submitting client_id, not broadcast). Messages are routed to jobs by
+    prompt_id. A periodic resync reconciles active jobs against the
+    queue/history as a safety net, so jobs never get stuck even if an event
+    is missed or the client_id races with another ComfyUI client.
     """
 
     def __init__(self) -> None:
@@ -50,17 +54,31 @@ class JobMonitor:
             try:
                 with SessionLocal() as db:
                     ws_url = get_effective_settings(db)["comfyui_ws_url"]
+                url = f"{ws_url}?clientId={comfyui_client.monitor_client_id}"
                 async with websockets.connect(
-                    ws_url, ping_interval=20, open_timeout=10
+                    url, ping_interval=20, open_timeout=10
                 ) as ws:
                     self._connected = True
                     await self._resync()
-                    async for raw in ws:
+                    next_resync = time.monotonic() + RESYNC_INTERVAL
+                    while True:
+                        raw: str | None = None
                         try:
-                            message = json.loads(raw)
-                        except json.JSONDecodeError:
-                            continue
-                        await self._handle_message(message)
+                            raw = await asyncio.wait_for(
+                                ws.recv(), timeout=RESYNC_INTERVAL
+                            )
+                        except asyncio.TimeoutError:
+                            raw = None
+                        if raw is not None:
+                            try:
+                                message = json.loads(raw)
+                            except json.JSONDecodeError:
+                                message = None
+                            if message is not None:
+                                await self._handle_message(message)
+                        if time.monotonic() >= next_resync:
+                            await self._resync()
+                            next_resync = time.monotonic() + RESYNC_INTERVAL
             except asyncio.CancelledError:
                 raise
             except Exception:  # noqa: BLE001 - reconnect on any failure
@@ -132,9 +150,13 @@ class JobMonitor:
                 queue = await comfyui_client.get_queue(base_url)
             except ComfyUIError:
                 queue = {"running": [], "pending": []}
-            queued_ids = {
-                item[0] for item in queue.get("running", [])
-            } | {item[0] for item in queue.get("pending", [])}
+            queued_ids: set[str] = set()
+            for item in list(queue.get("running", [])) + list(
+                queue.get("pending", [])
+            ):
+                # Queue items are [number, prompt_id, prompt, extra, outputs].
+                if len(item) > 1 and isinstance(item[1], str):
+                    queued_ids.add(item[1])
             for job in active:
                 if job.status == "queued" and not job.comfyui_prompt_id:
                     job.status = "failed"
@@ -153,14 +175,40 @@ class JobMonitor:
                     continue
                 if history is not None and history.get("outputs"):
                     await self._complete(db, job)
-                else:
+                elif history is None:
                     job.status = "failed"
                     job.error = (
                         "Lost: ComfyUI has no record of this prompt "
                         "(it likely restarted before the job finished)"
                     )
                     job.finished_at = utcnow()
+                else:
+                    status_str = (history.get("status") or {}).get("status_str", "")
+                    if status_str == "interrupted":
+                        job.status = "interrupted"
+                        job.error = "Interrupted in ComfyUI"
+                    else:
+                        job.status = "failed"
+                        job.error = self._history_error(history) or (
+                            "Failed in ComfyUI"
+                        )
+                    job.finished_at = utcnow()
             db.commit()
+
+    @staticmethod
+    def _history_error(history: dict) -> str | None:
+        for msg in (history.get("status") or {}).get("messages", []):
+            if (
+                isinstance(msg, list)
+                and len(msg) >= 2
+                and msg[0] == "execution_error"
+            ):
+                data = msg[1] if isinstance(msg[1], dict) else {}
+                return (
+                    f"{data.get('exception_type', 'Error')}: "
+                    f"{data.get('exception_message', '')}"
+                ).strip()
+        return None
 
     async def cancel(self, client_id: str) -> bool:
         with SessionLocal() as db:
