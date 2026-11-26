@@ -1,6 +1,7 @@
 import asyncio
 import json
 import time
+from datetime import datetime, timezone
 
 import websockets
 from sqlalchemy import select
@@ -15,6 +16,10 @@ from app.services.settings import get_effective_settings
 
 RECONNECT_DELAY = 2.0
 RESYNC_INTERVAL = 8.0
+# Don't conclude a prompt is lost until it's been submitted long enough that
+# ComfyUI's queue/history must reflect it. Guards the brief window between a
+# prompt leaving the queue and its history entry being written.
+LOST_GRACE_SECONDS = 30.0
 
 
 class JobMonitor:
@@ -149,7 +154,9 @@ class JobMonitor:
             try:
                 queue = await comfyui_client.get_queue(base_url)
             except ComfyUIError:
-                queue = {"running": [], "pending": []}
+                # Can't verify what's in flight; don't conclude anything is
+                # lost this cycle.
+                return
             queued_ids: set[str] = set()
             for item in list(queue.get("running", [])) + list(
                 queue.get("pending", [])
@@ -176,6 +183,10 @@ class JobMonitor:
                 if history is not None and history.get("outputs"):
                     await self._complete(db, job)
                 elif history is None:
+                    if self._job_age_seconds(job) < LOST_GRACE_SECONDS:
+                        # Too new to be lost; the queue/history may not have
+                        # reflected this prompt yet.
+                        continue
                     job.status = "failed"
                     job.error = (
                         "Lost: ComfyUI has no record of this prompt "
@@ -194,6 +205,16 @@ class JobMonitor:
                         )
                     job.finished_at = utcnow()
             db.commit()
+
+    @staticmethod
+    def _job_age_seconds(job: Job) -> float:
+        created = job.created_at
+        if created is None:
+            return float("inf")
+        if created.tzinfo is not None:
+            created = created.astimezone(timezone.utc).replace(tzinfo=None)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        return (now - created).total_seconds()
 
     @staticmethod
     def _history_error(history: dict) -> str | None:

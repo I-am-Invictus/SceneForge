@@ -110,8 +110,14 @@ class ComfyUIClient:
         return prompt_id
 
     async def get_queue(self, base_url: str) -> dict:
+        # ComfyUI returns {"queue_running": [...], "queue_pending": [...]},
+        # where each item is [number, prompt_id, prompt, extra, outputs].
         response = await self._request(base_url, "GET", "/queue")
-        return response.json().get("queue", {"running": [], "pending": []})
+        body = response.json()
+        return {
+            "running": body.get("queue_running", []),
+            "pending": body.get("queue_pending", []),
+        }
 
     async def get_history(self, base_url: str, prompt_id: str) -> dict | None:
         response = await self._request(base_url, "GET", f"/history/{prompt_id}")

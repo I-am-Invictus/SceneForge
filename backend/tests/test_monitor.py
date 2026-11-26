@@ -1,12 +1,14 @@
 import asyncio
 import uuid
-from unittest.mock import AsyncMock
+from datetime import timedelta
+from unittest.mock import AsyncMock, MagicMock
 
 from sqlalchemy.orm import Session
 
-from app.comfyui import comfyui_client
+from app.comfyui import ComfyUIError, comfyui_client
 from app.database.db import SessionLocal
 from app.models import Job
+from app.models.setting import utcnow
 from app.services import generation
 from app.services.monitor import JobMonitor
 
@@ -68,17 +70,6 @@ def test_resync_ignores_job_still_in_queue(monkeypatch):
     )
     with SessionLocal() as db:
         assert db.get(Job, job_id).status == "queued"
-
-
-def test_resync_fails_job_with_no_history(monkeypatch):
-    with SessionLocal() as db:
-        job = make_job(db, "running", "p1")
-        job_id = job.id
-    run_resync(monkeypatch, {"running": [], "pending": []}, None)
-    with SessionLocal() as db:
-        row = db.get(Job, job_id)
-        assert row.status == "failed"
-        assert "Lost" in row.error
 
 
 def test_resync_marks_interrupted_from_history(monkeypatch):
@@ -143,3 +134,65 @@ def test_submit_uses_stable_monitor_client_id(monkeypatch):
 
     asyncio.run(run())
     assert captured["client_id"] == comfyui_client.monitor_client_id
+
+
+def test_get_queue_parses_comfyui_shape(monkeypatch):
+    body = {
+        "queue_running": [[1, "p-running", {}, {}, []]],
+        "queue_pending": [[2, "p-pending", {}, {}, []]],
+    }
+    response = MagicMock()
+    response.json.return_value = body
+    monkeypatch.setattr(
+        comfyui_client, "_request", AsyncMock(return_value=response)
+    )
+
+    async def run():
+        return await comfyui_client.get_queue("http://x")
+
+    result = asyncio.run(run())
+    assert result["running"] == [[1, "p-running", {}, {}, []]]
+    assert result["pending"] == [[2, "p-pending", {}, {}, []]]
+
+
+def test_resync_skips_recent_job_without_history(monkeypatch):
+    # A just-submitted prompt that isn't in queue/history yet must not be
+    # marked lost (grace period).
+    with SessionLocal() as db:
+        job = make_job(db, "running", "p1")
+        job_id = job.id
+    run_resync(monkeypatch, {"running": [], "pending": []}, None)
+    with SessionLocal() as db:
+        assert db.get(Job, job_id).status == "running"
+
+
+def test_resync_fails_old_job_without_history(monkeypatch):
+    with SessionLocal() as db:
+        job = make_job(db, "running", "p1")
+        job.created_at = utcnow() - timedelta(seconds=120)
+        db.commit()
+        job_id = job.id
+    run_resync(monkeypatch, {"running": [], "pending": []}, None)
+    with SessionLocal() as db:
+        row = db.get(Job, job_id)
+        assert row.status == "failed"
+        assert "Lost" in row.error
+
+
+def test_resync_skips_cycle_when_queue_unreachable(monkeypatch):
+    with SessionLocal() as db:
+        job = make_job(db, "running", "p1")
+        job.created_at = utcnow() - timedelta(seconds=120)
+        db.commit()
+        job_id = job.id
+    monkeypatch.setattr(
+        comfyui_client,
+        "get_queue",
+        AsyncMock(side_effect=ComfyUIError("unreachable")),
+    )
+    monkeypatch.setattr(
+        generation, "retrieve_outputs", AsyncMock(return_value=[])
+    )
+    asyncio.run(JobMonitor()._resync())
+    with SessionLocal() as db:
+        assert db.get(Job, job_id).status == "running"
