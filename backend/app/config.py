@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     comfyui_http_url: str = "http://127.0.0.1:8188"
     comfyui_ws_url: str = "ws://127.0.0.1:8188/ws"
     sceneforge_data_dir: str = "/var/lib/sceneforge"
+    jpeg_quality: int = 85
+    thumb_max_dim: int = 320
 
     @property
     def data_dirs(self) -> dict[str, Path]:

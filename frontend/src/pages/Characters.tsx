@@ -1,11 +1,5 @@
-import { WorkspacePlaceholder } from '../components/WorkspacePlaceholder'
+import { LibraryPage } from '../components/LibraryPage'
 
 export function Characters() {
-  return (
-    <WorkspacePlaceholder
-      title="Characters"
-      description="Manage character assets, each with multiple reference images, organized in folders with search and favorites."
-      phase="Planned · Phase 2"
-    />
-  )
+  return <LibraryPage kind="character" title="Characters" />
 }

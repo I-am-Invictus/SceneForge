@@ -86,7 +86,9 @@ export function SettingsPage() {
 
   const dirty =
     draft.comfyui_http_url !== settings.comfyui_http_url ||
-    draft.comfyui_ws_url !== settings.comfyui_ws_url
+    draft.comfyui_ws_url !== settings.comfyui_ws_url ||
+    draft.jpeg_quality !== settings.jpeg_quality ||
+    draft.thumb_max_dim !== settings.thumb_max_dim
 
   return (
     <div className="page">
@@ -154,6 +156,41 @@ export function SettingsPage() {
             )}
           </div>
         )}
+      </section>
+
+      <section className="settings-card">
+        <h2>Image Processing</h2>
+        <p className="settings-hint">
+          Applied to new thumbnails and JPEG conversions. Existing thumbnails
+          keep their original settings.
+        </p>
+
+        <div className="settings-row">
+          <label className="field">
+            <span>JPEG quality (10–100)</span>
+            <input
+              type="number"
+              min={10}
+              max={100}
+              value={draft.jpeg_quality}
+              onChange={(e) =>
+                setDraft({ ...draft, jpeg_quality: Number(e.target.value) })
+              }
+            />
+          </label>
+          <label className="field">
+            <span>Thumbnail max dimension (64–2048 px)</span>
+            <input
+              type="number"
+              min={64}
+              max={2048}
+              value={draft.thumb_max_dim}
+              onChange={(e) =>
+                setDraft({ ...draft, thumb_max_dim: Number(e.target.value) })
+              }
+            />
+          </label>
+        </div>
       </section>
 
       <section className="settings-card">

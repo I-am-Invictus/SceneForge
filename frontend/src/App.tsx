@@ -9,6 +9,7 @@ import { Starred } from './pages/Starred'
 import { History } from './pages/History'
 import { Workflows } from './pages/Workflows'
 import { SettingsPage } from './pages/SettingsPage'
+import { AssetDetailPage } from './components/AssetDetailPage'
 
 export default function App() {
   return (
@@ -22,7 +23,15 @@ export default function App() {
             <Route path="/modify" element={<ImageModification />} />
             <Route path="/swap" element={<CharacterSwap />} />
             <Route path="/characters" element={<Characters />} />
+            <Route
+              path="/characters/:id"
+              element={<AssetDetailPage kind="character" />}
+            />
             <Route path="/scenes" element={<Scenes />} />
+            <Route
+              path="/scenes/:id"
+              element={<AssetDetailPage kind="scene" />}
+            />
             <Route path="/starred" element={<Starred />} />
             <Route path="/history" element={<History />} />
             <Route path="/workflows" element={<Workflows />} />
