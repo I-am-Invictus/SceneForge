@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { Dialog } from '../Dialog'
+import { useState } from 'react'
+import { Dialog } from './Dialog'
 
 interface ConfirmDialogProps {
   title: string

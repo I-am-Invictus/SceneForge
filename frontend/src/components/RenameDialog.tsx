@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Dialog } from '../Dialog'
+import { Dialog } from './Dialog'
 
 interface RenameDialogProps {
   title: string
