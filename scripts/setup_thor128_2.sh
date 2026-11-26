@@ -1,23 +1,20 @@
 #!/usr/bin/env bash
 # SceneForge Phase 1 - one-time host setup for thor128-2
-# Run as nmc220 on thor128-2. Prompts for sudo password once per sudo call.
+# Run as nmc220 on thor128-2. Prompts for sudo password (cached after first use).
 # Idempotent: safe to re-run.
 set -euo pipefail
 
-echo "==> 1/5 Creating dedicated service account 'sceneforge'"
-if ! id sceneforge &>/dev/null; then
-  sudo useradd --system --home-dir /var/lib/sceneforge --shell /usr/sbin/nologin sceneforge
-fi
+RUN_USER=nmc220
 
-echo "==> 2/5 Creating directory structure"
+echo "==> 1/4 Creating directory structure"
 sudo mkdir -p /opt/sceneforge/{frontend,backend,workflows,scripts,docs}
 sudo mkdir -p /var/lib/sceneforge/{database,thumbnails,generated,temporary,backups,logs}
 sudo mkdir -p /var/lib/sceneforge/assets/{characters,scenes}
-sudo chown -R nmc220:nmc220 /opt/sceneforge
-sudo chown -R sceneforge:sceneforge /var/lib/sceneforge
+sudo chown -R "$RUN_USER:$RUN_USER" /opt/sceneforge
+sudo chown -R "$RUN_USER:$RUN_USER" /var/lib/sceneforge
 sudo chmod 750 /var/lib/sceneforge
 
-echo "==> 3/5 Installing Node.js 22 LTS (frontend build)"
+echo "==> 2/4 Installing Node.js 22 LTS (frontend build only)"
 if command -v node &>/dev/null; then
   echo "    node already present: $(node --version)"
 else
@@ -26,9 +23,9 @@ else
 fi
 node --version
 
-echo "==> 4/5 Writing /opt/sceneforge/.env (if absent)"
+echo "==> 3/4 Writing /opt/sceneforge/.env (if absent)"
 if [ ! -f /opt/sceneforge/.env ]; then
-  sudo tee /opt/sceneforge/.env >/dev/null <<'EOF'
+  sudo tee /opt/sceneforge/.env >/dev/null <<EOF
 SCENEFORGE_HOST=0.0.0.0
 SCENEFORGE_PORT=8080
 
@@ -37,14 +34,14 @@ COMFYUI_WS_URL=ws://127.0.0.1:8188/ws
 
 SCENEFORGE_DATA_DIR=/var/lib/sceneforge
 EOF
-  sudo chown sceneforge:sceneforge /opt/sceneforge/.env
+  sudo chown "$RUN_USER:$RUN_USER" /opt/sceneforge/.env
   sudo chmod 600 /opt/sceneforge/.env
 else
   echo "    /opt/sceneforge/.env already exists, leaving it untouched"
 fi
 
-echo "==> 5/5 Installing systemd unit (NOT enabled/started yet)"
-sudo tee /etc/systemd/system/sceneforge.service >/dev/null <<'EOF'
+echo "==> 4/4 Installing systemd unit (NOT enabled/started yet)"
+sudo tee /etc/systemd/system/sceneforge.service >/dev/null <<EOF
 [Unit]
 Description=SceneForge Studio
 After=network-online.target
@@ -52,11 +49,11 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=sceneforge
-Group=sceneforge
+User=$RUN_USER
+Group=$RUN_USER
 WorkingDirectory=/opt/sceneforge/backend
 EnvironmentFile=/opt/sceneforge/.env
-ExecStart=/opt/sceneforge/backend/.venv/bin/python -m uvicorn app.main:app --host ${SCENEFORGE_HOST} --port ${SCENEFORGE_PORT}
+ExecStart=/opt/sceneforge/backend/.venv/bin/python -m uvicorn app.main:app --host \${SCENEFORGE_HOST} --port \${SCENEFORGE_PORT}
 Restart=always
 RestartSec=5
 NoNewPrivileges=true
@@ -69,6 +66,5 @@ sudo systemctl daemon-reload
 
 echo
 echo "Setup complete."
-id sceneforge
 ls -la /opt/sceneforge
 ls -la /var/lib/sceneforge
