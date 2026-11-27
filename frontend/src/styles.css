@@ -1086,6 +1086,14 @@ button {
   align-items: start;
 }
 
+/* Let each grid item shrink below its content's min-content so the mobile
+   single-column track never overflows the viewport (e.g. a wide result
+   toolbar). Without this the default min-width:auto forces the 1fr column
+   wider than the page and lets the page pan sideways on phones. */
+.gen-layout > * {
+  min-width: 0;
+}
+
 .gen-form {
   position: sticky;
   top: 24px;
@@ -1796,6 +1804,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 12px;
   min-height: 14px;
