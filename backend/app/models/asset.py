@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.db import Base
@@ -13,6 +13,9 @@ class Asset(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     kind: Mapped[str] = mapped_column(String(16))
     name: Mapped[str] = mapped_column(String(200))
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # JSON array of short strings (stored as text for SQLite simplicity).
+    tags: Mapped[str | None] = mapped_column(Text, nullable=True)
     folder_id: Mapped[int | None] = mapped_column(
         ForeignKey("folders.id", ondelete="SET NULL"), nullable=True
     )

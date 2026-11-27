@@ -291,3 +291,294 @@ def test_restart_persistence():
         original = client.get(detail.json()["files"][0]["original_url"])
         assert original.status_code == 200
         assert original.headers["content-type"] == "image/png"
+
+
+# --- asset metadata editing -------------------------------------------------
+
+
+def test_update_asset_metadata():
+    with TestClient(app) as client:
+        (asset,) = upload(
+            client, "character", files=[("meta.png", make_image())], name="Meta"
+        ).json()
+        assert asset["description"] is None
+        assert asset["tags"] == []
+        (file_before,) = asset["files"]
+
+        res = client.patch(
+            f"/api/libraries/character/assets/{asset['id']}",
+            json={
+                "name": "Meta Renamed",
+                "description": "A test character description",
+                "tags": ["hero", "classic", "hero"],
+            },
+        )
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["name"] == "Meta Renamed"
+        assert body["description"] == "A test character description"
+        assert body["tags"] == ["hero", "classic"]  # deduplicated, order kept
+
+        # Individual fields: clear description and tags, keep the name.
+        res = client.patch(
+            f"/api/libraries/character/assets/{asset['id']}",
+            json={"description": "", "tags": []},
+        )
+        assert res.status_code == 200
+        assert res.json()["description"] is None
+        assert res.json()["tags"] == []
+        assert res.json()["name"] == "Meta Renamed"
+
+        # The underlying image is untouched: same file id and bytes.
+        detail = client.get(f"/api/libraries/character/assets/{asset['id']}")
+        (file_after,) = detail.json()["files"]
+        assert file_after["id"] == file_before["id"]
+        assert (
+            client.get(file_after["original_url"]).content
+            == client.get(file_before["original_url"]).content
+        )
+
+
+def test_update_asset_metadata_validation():
+    with TestClient(app) as client:
+        (asset,) = upload(
+            client, "scene", files=[("v.png", make_image())], name="V"
+        ).json()
+        # Name still required when provided.
+        assert (
+            client.patch(
+                f"/api/libraries/scene/assets/{asset['id']}", json={"name": "  "}
+            ).status_code
+            == 422
+        )
+        # Too many tags.
+        assert (
+            client.patch(
+                f"/api/libraries/scene/assets/{asset['id']}",
+                json={"tags": [f"t{i}" for i in range(21)]},
+            ).status_code
+            == 422
+        )
+        # Tag too long.
+        assert (
+            client.patch(
+                f"/api/libraries/scene/assets/{asset['id']}",
+                json={"tags": ["x" * 51]},
+            ).status_code
+            == 422
+        )
+        # Description too long.
+        assert (
+            client.patch(
+                f"/api/libraries/scene/assets/{asset['id']}",
+                json={"description": "x" * 2001},
+            ).status_code
+            == 422
+        )
+
+
+# --- startup migration for pre-existing databases ---------------------------
+
+
+def test_startup_migration_adds_metadata_columns(tmp_path):
+    import sqlalchemy as sa
+    from app.database.db import migrate_legacy_columns
+
+    db_file = tmp_path / "legacy.db"
+    legacy_engine = sa.create_engine(f"sqlite:///{db_file}")
+    with legacy_engine.begin() as conn:
+        # Pre-metadata schema: assets without description/tags.
+        conn.execute(
+            sa.text(
+                "CREATE TABLE assets ("
+                "id INTEGER PRIMARY KEY, kind VARCHAR(16) NOT NULL, "
+                "name VARCHAR(200) NOT NULL, "
+                "folder_id INTEGER, is_favorite BOOLEAN NOT NULL, "
+                "storage_dir VARCHAR(64) NOT NULL, "
+                "created_at DATETIME, updated_at DATETIME)"
+            )
+        )
+        conn.execute(
+            sa.text(
+                "INSERT INTO assets (kind, name, is_favorite, storage_dir) "
+                "VALUES ('scene', 'Legacy', 0, 'assets/scene/legacy')"
+            )
+        )
+    migrate_legacy_columns(legacy_engine)
+    migrate_legacy_columns(legacy_engine)  # idempotent
+    with legacy_engine.connect() as conn:
+        cols = {row[1] for row in conn.execute(sa.text("PRAGMA table_info(assets)"))}
+        assert "description" in cols and "tags" in cols
+        row = conn.execute(
+            sa.text("SELECT name, description, tags FROM assets")
+        ).fetchone()
+    assert row == ("Legacy", None, None)
+    legacy_engine.dispose()
+
+
+# --- reference-safe asset deletion ------------------------------------------
+
+
+def _make_job_referencing_asset_file(file_id):
+    import uuid as _uuid
+    from app.database.db import SessionLocal
+    from app.models import Job
+
+    with SessionLocal() as db:
+        job = Job(
+            client_id=f"job-{_uuid.uuid4().hex[:8]}",
+            comfyui_prompt_id=f"p-{_uuid.uuid4().hex[:8]}",
+            workflow_id="qwen_image_edit_v1",
+            workflow_version=1,
+            workflow_name="Qwen Image Edit",
+            category="image_modification",
+            status="completed",
+            inputs_json=(
+                '{"source_image": {"asset_file_id": %d, '
+                '"uploaded_as": "sf_test.webp"}}' % file_id
+            ),
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        return job.client_id
+
+
+def test_delete_asset_keeps_file_referenced_by_job_inputs():
+    from app.database.db import SessionLocal
+    from app.models import AssetFile, Job
+
+    with TestClient(app) as client:
+        (asset,) = upload(
+            client, "scene", files=[("ref.png", make_image())], name="Referenced"
+        ).json()
+        (file,) = asset["files"]
+        job_client_id = _make_job_referencing_asset_file(file["id"])
+        with SessionLocal() as db:
+            af = db.get(AssetFile, file["id"])
+            stored_rel = af.stored_path
+
+        assert (
+            client.delete(f"/api/libraries/scene/assets/{asset['id']}").status_code
+            == 204
+        )
+        assert (
+            client.get(f"/api/libraries/scene/assets/{asset['id']}").status_code
+            == 404
+        )
+        # The AssetFile row is gone...
+        with SessionLocal() as db:
+            assert db.get(AssetFile, file["id"]) is None
+            job = db.query(Job).filter(Job.client_id == job_client_id).first()
+            assert job is not None
+        # ...but the bytes survive for the job's source comparison.
+        assert (data_root() / stored_rel).is_file()
+
+
+def test_delete_asset_keeps_file_referenced_by_job_output():
+    import uuid
+
+    from app.database.db import SessionLocal
+    from app.models import AssetFile, Job, JobOutput
+
+    with TestClient(app) as client:
+        (asset,) = upload(
+            client,
+            "character",
+            files=[("moved.png", make_image())],
+            name="Moved Result",
+        ).json()
+        (file,) = asset["files"]
+        with SessionLocal() as db:
+            af = db.get(AssetFile, file["id"])
+            job = Job(
+                client_id=f"job-{uuid.uuid4().hex[:8]}",
+                workflow_id="qwen_image_edit_v1",
+                workflow_version=1,
+                workflow_name="Qwen Image Edit",
+                category="image_modification",
+                status="completed",
+            )
+            db.add(job)
+            db.commit()
+            db.refresh(job)
+            # Simulate a generated output moved into this asset.
+            db.add(
+                JobOutput(
+                    job_id=job.id,
+                    node_id="30",
+                    comfyui_filename="final.png",
+                    stored_path=af.stored_path,
+                    thumbnail_path=af.thumbnail_path,
+                    width=file["width"],
+                    height=file["height"],
+                    size_bytes=file["size_bytes"],
+                    mime=file["mime"],
+                )
+            )
+            db.commit()
+            out_id = db.query(JobOutput).first().id
+
+        assert (
+            client.delete(f"/api/libraries/character/assets/{asset['id']}").status_code
+            == 204
+        )
+        assert (
+            client.get(f"/api/libraries/character/assets/{asset['id']}").status_code
+            == 404
+        )
+        # The job output still serves the shared bytes.
+        assert client.get(f"/media/job-assets/{out_id}").status_code == 200
+
+
+def test_delete_asset_missing_files_graceful():
+    from app.database.db import SessionLocal
+    from app.models import AssetFile
+
+    with TestClient(app) as client:
+        (asset,) = upload(
+            client, "scene", files=[("gone.png", make_image())], name="Gone"
+        ).json()
+        (file,) = asset["files"]
+        with SessionLocal() as db:
+            af = db.get(AssetFile, file["id"])
+            stored_rel, thumb_rel = af.stored_path, af.thumbnail_path
+        (data_root() / stored_rel).unlink()
+        (data_root() / thumb_rel).unlink()
+        assert (
+            client.delete(f"/api/libraries/scene/assets/{asset['id']}").status_code
+            == 204
+        )
+        assert (
+            client.get(f"/api/libraries/scene/assets/{asset['id']}").status_code
+            == 404
+        )
+
+
+def test_delete_asset_refuses_outside_storage_path():
+    from app.database.db import SessionLocal
+    from app.models import AssetFile
+
+    outside = data_root().parent / "outside_asset.png"
+    outside.write_bytes(make_image())
+    with TestClient(app) as client:
+        (asset,) = upload(
+            client, "scene", files=[("safe.png", make_image())], name="Outside"
+        ).json()
+        (file,) = asset["files"]
+        with SessionLocal() as db:
+            af = db.get(AssetFile, file["id"])
+            af.stored_path = "../outside_asset.png"
+            db.commit()
+        assert (
+            client.delete(f"/api/libraries/scene/assets/{asset['id']}").status_code
+            == 204
+        )
+    assert outside.is_file(), "file outside managed storage must not be touched"
+    outside.unlink(missing_ok=True)
+
+
+def test_delete_asset_unknown():
+    with TestClient(app) as client:
+        assert client.delete("/api/libraries/scene/assets/999999").status_code == 404
+        assert client.delete("/api/libraries/character/assets/999999").status_code == 404

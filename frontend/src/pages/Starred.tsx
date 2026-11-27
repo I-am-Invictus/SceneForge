@@ -19,6 +19,9 @@ export function Starred() {
     navigate(`${base}/${asset.id}`)
   }
 
+  const apply = (kind: 'character' | 'scene') =>
+    kind === 'character' ? setCharacters : setScenes
+
   const renderSection = (title: string, items: Asset[], kind: 'character' | 'scene') => (
     <section>
       <h2 className="starred-section-title">{title}</h2>
@@ -32,11 +35,17 @@ export function Starred() {
               asset={asset}
               onOpen={open}
               onStarred={(updated) =>
-                kind === 'character'
-                  ? setCharacters((prev) =>
-                      prev.filter((a) => a.id !== updated.id),
-                    )
-                  : setScenes((prev) => prev.filter((a) => a.id !== updated.id))
+                apply(kind)((prev) => prev.filter((a) => a.id !== updated.id))
+              }
+              onUpdated={(updated) =>
+                apply(kind)((prev) =>
+                  updated.is_favorite
+                    ? prev.map((a) => (a.id === updated.id ? updated : a))
+                    : prev.filter((a) => a.id !== updated.id),
+                )
+              }
+              onDeleted={(assetId) =>
+                apply(kind)((prev) => prev.filter((a) => a.id !== assetId))
               }
             />
           ))}

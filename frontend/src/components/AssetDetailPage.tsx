@@ -3,8 +3,8 @@ import { useNavigate, useParams } from 'react-router-dom'
 import type { Asset, AssetKind, Folder } from '../types/assets'
 import * as assetsApi from '../services/assets'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { EditAssetDialog } from '../components/EditAssetDialog'
 import { MoveDialog } from '../components/MoveDialog'
-import { RenameDialog } from '../components/RenameDialog'
 
 export function AssetDetailPage({ kind }: { kind: AssetKind }) {
   const { id } = useParams<{ id: string }>()
@@ -13,7 +13,7 @@ export function AssetDetailPage({ kind }: { kind: AssetKind }) {
   const [asset, setAsset] = useState<Asset | null>(null)
   const [folders, setFolders] = useState<Folder[]>([])
   const [notFound, setNotFound] = useState(false)
-  const [dialog, setDialog] = useState<'rename' | 'move' | 'delete' | null>(null)
+  const [dialog, setDialog] = useState<'edit' | 'move' | 'delete' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const addRefInput = useRef<HTMLInputElement>(null)
 
@@ -79,8 +79,8 @@ export function AssetDetailPage({ kind }: { kind: AssetKind }) {
           >
             {asset.is_favorite ? '★ Starred' : '☆ Star'}
           </button>
-          <button className="btn secondary" onClick={() => setDialog('rename')}>
-            Rename
+          <button className="btn secondary" onClick={() => setDialog('edit')}>
+            Edit
           </button>
           <button className="btn secondary" onClick={() => setDialog('move')}>
             Move
@@ -92,6 +92,21 @@ export function AssetDetailPage({ kind }: { kind: AssetKind }) {
       </header>
 
       {error && <p className="form-error">{error}</p>}
+
+      {(asset.description || (asset.tags && asset.tags.length > 0)) && (
+        <div className="asset-meta-block">
+          {asset.description && <p className="asset-description">{asset.description}</p>}
+          {asset.tags && asset.tags.length > 0 && (
+            <div className="tag-row">
+              {asset.tags.map((tag) => (
+                <span key={tag} className="tag-chip">
+                  {tag}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="references-grid">
         {asset.files.map((file) => (
@@ -162,12 +177,16 @@ export function AssetDetailPage({ kind }: { kind: AssetKind }) {
         )}
       </div>
 
-      {dialog === 'rename' && (
-        <RenameDialog
-          title={`Rename ${isCharacter ? 'character' : 'scene'}`}
+      {dialog === 'edit' && (
+        <EditAssetDialog
+          title={`Edit ${isCharacter ? 'character' : 'scene'}`}
           initialName={asset.name}
-          onRename={(name) =>
-            assetsApi.patchAsset(kind, assetId, { name }).then(setAsset)
+          initialDescription={asset.description}
+          initialTags={asset.tags}
+          onSave={(name, description, tags) =>
+            assetsApi
+              .patchAsset(kind, assetId, { name, description, tags })
+              .then(setAsset)
           }
           onClose={() => setDialog(null)}
         />

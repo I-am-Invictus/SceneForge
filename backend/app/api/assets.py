@@ -13,7 +13,7 @@ from app.schemas.assets import (
     FolderRename,
 )
 from app.services import assets as asset_service
-from app.services.assets import AssetError, prepare_upload
+from app.services.assets import AssetError, parse_tags, prepare_upload
 from app.services import folders as folder_service
 from app.services.folders import FolderError
 
@@ -55,6 +55,8 @@ def serialize_asset(asset: Asset) -> AssetOut:
         id=asset.id,
         kind=asset.kind,
         name=asset.name,
+        description=asset.description,
+        tags=parse_tags(asset.tags),
         folder_id=asset.folder_id,
         is_favorite=asset.is_favorite,
         created_at=asset.created_at,
@@ -174,6 +176,8 @@ async def patch_asset(
             asset_id,
             name=payload.name,
             is_favorite=payload.is_favorite,
+            description=payload.description,
+            tags=payload.tags,
         )
         return serialize_asset(asset)
     except AssetError as exc:

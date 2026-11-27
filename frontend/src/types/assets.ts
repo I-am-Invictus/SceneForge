@@ -25,6 +25,8 @@ export interface Asset {
   id: number
   kind: string
   name: string
+  description: string | null
+  tags: string[]
   folder_id: number | null
   is_favorite: boolean
   created_at: string

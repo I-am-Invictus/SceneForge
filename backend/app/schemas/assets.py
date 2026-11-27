@@ -37,6 +37,8 @@ class AssetOut(BaseModel):
     id: int
     kind: str
     name: str
+    description: str | None = None
+    tags: list[str] = []
     folder_id: int | None
     is_favorite: bool
     created_at: datetime
@@ -48,6 +50,10 @@ class AssetOut(BaseModel):
 
 class AssetPatch(BaseModel):
     name: str | None = None
+    # None = leave unchanged; "" = clear the description.
+    description: str | None = None
+    # None = leave unchanged; [] = clear all tags.
+    tags: list[str] | None = None
     is_favorite: bool | None = None
 
 

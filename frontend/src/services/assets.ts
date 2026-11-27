@@ -52,7 +52,12 @@ export function createAssets(
 export function patchAsset(
   kind: AssetKind,
   id: number,
-  patch: { name?: string; is_favorite?: boolean },
+  patch: {
+    name?: string
+    description?: string
+    tags?: string[]
+    is_favorite?: boolean
+  },
 ): Promise<Asset> {
   return request<Asset>(`${base(kind)}/assets/${id}`, {
     method: 'PATCH',

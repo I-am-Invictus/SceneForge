@@ -102,6 +102,14 @@ export function LibraryPage({ kind, title }: LibraryPageProps) {
                       prev.map((a) => (a.id === updated.id ? updated : a)),
                     )
                   }
+                  onUpdated={(updated) =>
+                    setAssets((prev) =>
+                      prev.map((a) => (a.id === updated.id ? updated : a)),
+                    )
+                  }
+                  onDeleted={(assetId) =>
+                    setAssets((prev) => prev.filter((a) => a.id !== assetId))
+                  }
                 />
               ))}
             </div>

@@ -1,25 +1,67 @@
 import asyncio
+import json
+import logging
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
 from fastapi import UploadFile
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.models import Asset, AssetFile, Folder, KIND_CHARACTER, KIND_SCENE
+from app.models import (
+    Asset,
+    AssetFile,
+    Folder,
+    Job,
+    JobOutput,
+    KIND_CHARACTER,
+    KIND_SCENE,
+)
 from app.services import images
 from app.services.folders import get_folder
 
+logger = logging.getLogger(__name__)
+
 IMAGE_WORKERS = 4
 _image_semaphore = asyncio.Semaphore(IMAGE_WORKERS)
+
+MAX_DESCRIPTION_LENGTH = 2000
+MAX_TAGS = 20
+MAX_TAG_LENGTH = 50
 
 
 class AssetError(ValueError):
     def __init__(self, status_code: int, message: str):
         super().__init__(message)
         self.status_code = status_code
+
+
+def parse_tags(raw: str | None) -> list[str]:
+    if not raw:
+        return []
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    return value if isinstance(value, list) else []
+
+
+def normalize_tags(tags: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for tag in tags:
+        tag = str(tag).strip()
+        if not tag or tag in seen:
+            continue
+        if len(tag) > MAX_TAG_LENGTH:
+            raise AssetError(422, f"Tag too long (max {MAX_TAG_LENGTH}): {tag[:20]}…")
+        seen.add(tag)
+        result.append(tag)
+    if len(result) > MAX_TAGS:
+        raise AssetError(422, f"Too many tags (max {MAX_TAGS})")
+    return result
 
 
 @dataclass
@@ -229,6 +271,8 @@ def update_asset(
     name: str | None = None,
     folder_id: int | None = None,
     is_favorite: bool | None = None,
+    description: str | None = None,
+    tags: list[str] | None = None,
 ) -> Asset:
     asset = get_asset(db, kind, asset_id)
     if name is not None:
@@ -242,6 +286,13 @@ def update_asset(
         asset.folder_id = get_folder(db, kind, folder_id).id
     if is_favorite is not None:
         asset.is_favorite = is_favorite
+    if description is not None:
+        description = description.strip()
+        if len(description) > MAX_DESCRIPTION_LENGTH:
+            raise AssetError(422, "Description too long")
+        asset.description = description or None
+    if tags is not None:
+        asset.tags = json.dumps(normalize_tags(tags), ensure_ascii=False)
     db.commit()
     db.refresh(asset)
     return asset
@@ -267,11 +318,57 @@ def _delete_file_on_disk(path_rel: str) -> None:
         pass
 
 
+def _path_referenced_by_outputs(db: Session, rel_path: str) -> bool:
+    # Outputs moved into a library share the asset file's stored path;
+    # deleting the asset must not break job results that still serve it.
+    return (
+        db.query(JobOutput)
+        .filter(
+            or_(
+                JobOutput.stored_path == rel_path,
+                JobOutput.thumbnail_path == rel_path,
+            )
+        )
+        .count()
+        > 0
+    )
+
+
+def _file_referenced_by_job_inputs(db: Session, asset_file: AssetFile) -> bool:
+    # Image inputs are recorded in each job's input summary as
+    # {"asset_file_id": <id>}; historical before/after comparisons rely on
+    # the source bytes staying available.
+    pattern = f'"asset_file_id": {asset_file.id}'
+    return (
+        db.query(Job)
+        .filter(Job.inputs_json.like(f"%{pattern}%"))
+        .count()
+        > 0
+    )
+
+
 def delete_asset(db: Session, kind: str, asset_id: int) -> None:
+    """Remove an asset from its library.
+
+    The library records are always removed. Image files are only unlinked
+    when no other record references them: job outputs (moved results share
+    the stored path) and historical job source associations keep their
+    bytes, so generated results, job history, and comparisons stay intact.
+    """
     asset = get_asset(db, kind, asset_id)
     for asset_file in list(asset.files):
-        _delete_file_on_disk(asset_file.stored_path)
-        _delete_file_on_disk(asset_file.thumbnail_path)
+        if (
+            _path_referenced_by_outputs(db, asset_file.stored_path)
+            or _file_referenced_by_job_inputs(db, asset_file)
+        ):
+            logger.info(
+                "Keeping %s on disk: still referenced by job records",
+                asset_file.stored_path,
+            )
+        else:
+            _delete_file_on_disk(asset_file.stored_path)
+        if not _path_referenced_by_outputs(db, asset_file.thumbnail_path):
+            _delete_file_on_disk(asset_file.thumbnail_path)
     db.delete(asset)
     db.commit()
 
