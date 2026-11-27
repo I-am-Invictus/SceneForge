@@ -22,6 +22,30 @@ interface SourceSelection {
   file: AssetFile
 }
 
+// Both editing modes drive the same instruction-based edit workflow; the mode
+// only shapes the prompt guidance, it is not a workflow input.
+type EditMode = 'scene' | 'character'
+
+const EDIT_MODES: Record<
+  EditMode,
+  { label: string; promptLabel: string; placeholder: string; hint: string }
+> = {
+  scene: {
+    label: 'Scene',
+    promptLabel: 'Scene prompt',
+    placeholder:
+      'e.g. Turn the sky into a warm sunset, add street lamps, and calm the water…',
+    hint: 'Environment, background, objects, lighting, and composition.',
+  },
+  character: {
+    label: 'Character',
+    promptLabel: 'Character prompt',
+    placeholder:
+      'e.g. Change the jacket to a red leather coat and make the hair longer…',
+    hint: 'Appearance, clothing, and pose of the person in the image.',
+  },
+}
+
 const POLL_INTERVAL_MS = 2500
 
 function roundTo8(value: number, minimum = 16, maximum = 2048): number {
@@ -41,6 +65,7 @@ export function ImageModification() {
 
   const [source, setSource] = useState<SourceSelection | null>(null)
   const [pickerOpen, setPickerOpen] = useState(false)
+  const [mode, setMode] = useState<EditMode>('scene')
   const [prompt, setPrompt] = useState('')
   const [negative, setNegative] = useState('')
   const [sizeMode, setSizeMode] = useState<'auto' | 'custom'>('auto')
@@ -302,13 +327,30 @@ export function ImageModification() {
             )}
           </div>
 
+          <div className="field">
+            <span>Editing mode</span>
+            <div className="preset-chips">
+              {(Object.keys(EDIT_MODES) as EditMode[]).map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  className={`preset-chip ${mode === m ? 'active' : ''}`}
+                  onClick={() => setMode(m)}
+                >
+                  {EDIT_MODES[m].label}
+                </button>
+              ))}
+            </div>
+            <p className="mode-hint">{EDIT_MODES[mode].hint}</p>
+          </div>
+
           <label className="field">
-            <span>Modification prompt</span>
+            <span>{EDIT_MODES[mode].promptLabel}</span>
             <textarea
               className="form-textarea"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Describe the change to make to the image…"
+              placeholder={EDIT_MODES[mode].placeholder}
             />
           </label>
 

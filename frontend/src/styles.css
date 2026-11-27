@@ -1759,6 +1759,12 @@ button {
   min-height: 64px;
 }
 
+.mode-hint {
+  font-size: 12px;
+  color: var(--text-faint);
+  margin: 2px 0 0;
+}
+
 /* ---------- Mobile nav ---------- */
 
 @media (max-width: 860px) {
