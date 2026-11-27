@@ -6,6 +6,7 @@ import { Icon } from '../components/icons'
 import { JobGallery } from '../components/JobGallery'
 import { JobResultViewer } from '../components/JobResultViewer'
 import { SourceImagePicker } from '../components/SourceImagePicker'
+import { useMoveToLibrary } from '../hooks/useMoveToLibrary'
 import { listAssets } from '../services/assets'
 import {
   cancelJob,
@@ -14,10 +15,9 @@ import {
   getJob,
   listJobs,
   listWorkflows,
-  moveJobOutput,
 } from '../services/jobs'
 import { TERMINAL_STATUSES, type Job, type Workflow } from '../types/jobs'
-import type { Asset, AssetFile, AssetKind } from '../types/assets'
+import type { Asset, AssetFile } from '../types/assets'
 
 interface SourceSelection {
   asset: Asset
@@ -87,10 +87,15 @@ export function ImageModification() {
     clientId: string
     outputId: number
   } | null>(null)
-  const [moveTarget, setMoveTarget] = useState<{
-    clientId: string
-    outputId: number
-  } | null>(null)
+
+  const upsertJob = useCallback((fresh: Job) => {
+    setJobs((prev) => [
+      fresh,
+      ...prev.filter((j) => j.client_id !== fresh.client_id),
+    ])
+  }, [])
+  const { moveTarget, requestMove, handleMove, closeMove } =
+    useMoveToLibrary(upsertJob)
 
   const workflow =
     workflows?.find(
@@ -245,10 +250,7 @@ export function ImageModification() {
       setActiveJobs((prev) =>
         prev.map((j) => (j.client_id === clientId ? fresh : j)),
       )
-      setJobs((prev) => [
-        fresh,
-        ...prev.filter((j) => j.client_id !== clientId),
-      ])
+      upsertJob(fresh)
     } catch (e) {
       setFormError((e as Error).message)
     }
@@ -258,14 +260,7 @@ export function ImageModification() {
     if (!confirmDelete) return
     const { clientId, outputId } = confirmDelete
     const fresh = await deleteJobOutput(clientId, outputId)
-    setJobs((prev) => [fresh, ...prev.filter((j) => j.client_id !== clientId)])
-  }
-
-  async function handleMoveConfirmed(folder: AssetKind) {
-    if (!moveTarget) return
-    const { clientId, outputId } = moveTarget
-    const fresh = await moveJobOutput(clientId, outputId, folder)
-    setJobs((prev) => [fresh, ...prev.filter((j) => j.client_id !== clientId)])
+    upsertJob(fresh)
   }
 
   const results = jobs.filter(
@@ -547,10 +542,7 @@ export function ImageModification() {
                 viewerJob.status === 'completed' ? requestDelete : undefined
               }
               onMoveOutput={
-                viewerJob.status === 'completed'
-                  ? (clientId, outputId) =>
-                      setMoveTarget({ clientId, outputId })
-                  : undefined
+                viewerJob.status === 'completed' ? requestMove : undefined
               }
             />
           ) : (
@@ -568,9 +560,7 @@ export function ImageModification() {
                 selectedClientId={viewerJob?.client_id}
                 onSelect={setSelectedClientId}
                 onDelete={requestDelete}
-                onMove={(clientId, outputId) =>
-                  setMoveTarget({ clientId, outputId })
-                }
+                onMove={requestMove}
               />
             </>
           )}
@@ -589,12 +579,7 @@ export function ImageModification() {
         />
       )}
 
-      {moveTarget && (
-        <MoveToLibraryDialog
-          onMove={(folder) => handleMoveConfirmed(folder)}
-          onClose={() => setMoveTarget(null)}
-        />
-      )}
+      {moveTarget && <MoveToLibraryDialog onMove={handleMove} onClose={closeMove} />}
 
       {confirmDelete && (
         <ConfirmDialog

@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { JobGallery } from '../components/JobGallery'
 import { JobResultViewer } from '../components/JobResultViewer'
+import { MoveToLibraryDialog } from '../components/MoveToLibraryDialog'
+import { useMoveToLibrary } from '../hooks/useMoveToLibrary'
 import {
   cancelJob,
   deleteJobOutput,
@@ -49,6 +51,15 @@ export function GeneralGeneration() {
     clientId: string
     outputId: number
   } | null>(null)
+
+  const upsertJob = useCallback((fresh: Job) => {
+    setJobs((prev) => [
+      fresh,
+      ...prev.filter((j) => j.client_id !== fresh.client_id),
+    ])
+  }, [])
+  const { moveTarget, requestMove, handleMove, closeMove } =
+    useMoveToLibrary(upsertJob)
 
   const workflow =
     workflows?.find((w) => w.category === 'general_generation' && w.enabled) ??
@@ -165,10 +176,7 @@ export function GeneralGeneration() {
       setActiveJobs((prev) =>
         prev.map((j) => (j.client_id === clientId ? fresh : j)),
       )
-      setJobs((prev) => [
-        fresh,
-        ...prev.filter((j) => j.client_id !== clientId),
-      ])
+      upsertJob(fresh)
     } catch (e) {
       setFormError((e as Error).message)
     }
@@ -178,7 +186,7 @@ export function GeneralGeneration() {
     if (!confirmDelete) return
     const { clientId, outputId } = confirmDelete
     const fresh = await deleteJobOutput(clientId, outputId)
-    setJobs((prev) => [fresh, ...prev.filter((j) => j.client_id !== clientId)])
+    upsertJob(fresh)
   }
 
   const requestDelete = (clientId: string, outputId: number) => {
@@ -410,6 +418,9 @@ export function GeneralGeneration() {
               onDeleteOutput={
                 viewerJob.status === 'completed' ? requestDelete : undefined
               }
+              onMoveOutput={
+                viewerJob.status === 'completed' ? requestMove : undefined
+              }
             />
           ) : (
             <div className="gen-empty">
@@ -426,11 +437,14 @@ export function GeneralGeneration() {
                 selectedClientId={viewerJob?.client_id}
                 onSelect={setSelectedClientId}
                 onDelete={requestDelete}
+                onMove={requestMove}
               />
             </>
           )}
         </section>
       </div>
+
+      {moveTarget && <MoveToLibraryDialog onMove={handleMove} onClose={closeMove} />}
 
       {confirmDelete && (
         <ConfirmDialog
