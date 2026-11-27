@@ -134,15 +134,16 @@ class JobMonitor:
         db.commit()
 
     async def _complete(self, db: Session, job: Job) -> None:
-        job.status = "completed"
-        job.progress = 1.0
-        job.finished_at = utcnow()
-        db.commit()
+        # Retrieve outputs before flipping to "completed" so a reader never
+        # sees a completed job whose images haven't been stored yet.
         try:
             await generation.retrieve_outputs(db, job)
         except Exception as exc:  # noqa: BLE001
             job.error = f"Generation completed but output retrieval failed: {exc}"
-            db.commit()
+        job.status = "completed"
+        job.progress = 1.0
+        job.finished_at = utcnow()
+        db.commit()
 
     async def _resync(self) -> None:
         with SessionLocal() as db:

@@ -205,6 +205,24 @@ def test_resync_fails_old_queued_job_without_prompt_id(monkeypatch):
         assert "never submitted" in row.error
 
 
+def test_complete_retrieves_outputs_before_marking_completed(monkeypatch):
+    # Regression: a job must not read as "completed" until its outputs are
+    # stored, or the UI can show a completed job with no images until refresh.
+    status_at_retrieve: dict = {}
+
+    async def fake_retrieve(db, job):
+        status_at_retrieve["status"] = job.status
+        return [object()]
+
+    monkeypatch.setattr(generation, "retrieve_outputs", fake_retrieve)
+    with SessionLocal() as db:
+        job = make_job(db, "running", "p1")
+        asyncio.run(JobMonitor()._complete(db, job))
+        assert status_at_retrieve["status"] == "running"
+        db.refresh(job)
+        assert job.status == "completed"
+
+
 def test_resync_skips_cycle_when_queue_unreachable(monkeypatch):
     with SessionLocal() as db:
         job = make_job(db, "running", "p1")
