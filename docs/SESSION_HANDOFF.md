@@ -32,7 +32,7 @@ ComfyUI directly; everything goes through the backend over localhost.
 1. Develop + test on thor128: `backend/.venv/bin/python -m pytest tests` (from `backend/`), `npm run build` (from `frontend/`).
 2. `git add/commit/push origin main`.
 3. On thor128-2: `git -C ~/code/SceneForge pull && bash ~/code/SceneForge/scripts/deploy.sh` (rsync → `/opt/sceneforge`, refresh venv, build frontend).
-4. **User** runs `sudo systemctl restart sceneforge` (sudo needs a password).
+4. Restart the service to load new code: **User** runs `sudo systemctl restart sceneforge` (sudo needs a password). If sudo is unavailable, the service can be restarted without it by signaling the process (runs as `nmc220`, `Restart=always`): `kill -TERM $(pgrep -f "venv/bin/python -m uvicorn")` then wait ≈10s for systemd to relaunch it (see "Operational note — restart without sudo").
 5. Verify live via `curl http://127.0.0.1:8080/api/...` over ssh; ask the user to visually confirm in a browser.
 
 ## Phase status
@@ -47,6 +47,7 @@ ComfyUI directly; everything goes through the backend over localhost.
 - **Phase 6 (character swap UI):** DONE, verified live. See "Phase 6 implementation" below.
 - **Gallery Collections + gallery image viewer + reference-management generalization:** DONE, verified live (backend 80 tests + production smoke/acceptance). See "Gallery Collections (this session)" below.
 - **Phase 7 (workflow management):** DONE, verified live (101 backend tests + production acceptance on thor128-2). See "Phase 7 implementation" below.
+- **Upload cache-aliasing bug + image-data reset:** DONE, verified live (103 backend tests, 56-check upload acceptance, 13-check regression with a real inference, persistence across restart). Production image data was reset to empty per user authorization. See "Upload cache-aliasing fix + image-data reset (this session)" below.
 - Phase 8 (unified generation history): not started.
 
 ## STANDING REQUIREMENT — Gallery before/after comparison (Phases 4–6)
@@ -501,6 +502,84 @@ they only manifest with real ComfyUI / same-session uploads):
    from that cache, so a workflow uploaded in the same session was "Unknown" and
    testing a non-active version used the active template. `get_spec` now always
    reads from disk and threads the requested version through `submit_generation`.
+
+## Upload cache-aliasing fix + image-data reset (this session)
+
+**Symptom:** uploading a new image sometimes displayed an older, previously
+deleted image; the new image would only "appear" after enough more uploads.
+The confirmed-working before/after slider and Image Modification source were
+unaffected (they were only affected at the browser-cache layer).
+
+**Root cause:** every media URL is keyed by the SQLite integer primary key
+(`/media/thumbnails/{id}`, `/media/assets/{id}`, `/media/job-thumbnails/{id}`,
+`/media/job-assets/{id}`), and media is served with
+`Cache-Control: public, max-age=86400` (24h). The `asset_files` / `job_outputs`
+tables use a plain `INTEGER PRIMARY KEY` (rowid alias) **without
+`AUTOINCREMENT`**, so SQLite reuses `max(rowid)+1` once the highest row is
+deleted. Sequence: upload image A (gets the max id N) → browser caches
+`/media/…/N` = A → delete A (row N removed) → upload image B (new row **reuses
+id N**) → URL `/media/…/N` again → browser serves its cached copy of A. B shows
+A's stale image until the 24h cache expires or the in-memory cache evicts the
+entry (hence "appears after enough uploads"). Pre-reset production had 12
+orphaned asset files, confirming the delete/upload churn.
+
+**Fix (root cause, not a cache clear):** append a stable, per-file cache-buster
+`?v=<token>` to every media URL, where `token = sha1(stored_path)[:12]`
+(`app/services/images.py: media_token`). The `stored_path` is unique per file
+(uuid4 for assets, content-digest/uuid for outputs) and is **never reused**, so
+a recycled DB id always carries a different token → a different browser-cache
+key → a fresh fetch of the correct bytes. Applied uniformly across all
+serialize sites so every consumer (library grid, detail, before/after slider,
+gallery cover/images, edit/swap source) gets correct caching:
+`api/assets.py` (`serialize_file`, `serialize_asset`), `api/jobs.py`
+(`_serialize_output`), `api/galleries.py` (`_cover`, `_serialize_image`), and
+`services/galleries.py:resolve_original`. Media endpoints are unchanged (the
+`?v` is ignored by the route; plain `GET /media/…/{id}` still works), and
+`max-age=86400` is kept (now safe because the URL is stable per file). No schema
+change, no migration, no frontend change (the frontend only ever uses the
+`*_url` strings from the API).
+
+**Image-data reset** — `scripts/reset_image_data.py` (stdlib-only, dry-run by
+default, `--yes` to apply): hot-backs-up `sceneforge.db` to `backups/`, then
+wipes the four image-only dirs (`assets/`, `thumbnails/`, `generated/`,
+`temporary/`) and clears the image-bearing rows (`gallery_images`, `galleries`,
+`job_outputs`, `jobs`, `asset_files`, `assets`) in one transaction. Preserves
+`folders`, `settings`, the workflow registry/configs, ComfyUI models. Run with
+the service quiescent. Executed on thor128-2: cleared 9 assets / 11 asset_files /
+41 jobs / 26 job_outputs / 1 gallery + 82 image files (incl. the 12 orphans),
+DB backed up; a second (cleanup) reset after acceptance left the system empty.
+Final state: all image tables 0, 0 image files, `folders`=1 `settings`=2
+`workflows`=3 (qwen_image_edit_v1 / qwen_image_gen_v1 / qwen_person_swap_v1).
+
+**Verification (thor128-2, ComfyUI 0.46.0):**
+- Backend **103 pytest green** (101 prior + 2 new). New:
+  `test_media_token_stable_and_unique` and
+  `test_media_url_stable_across_asset_file_id_recycling` (the latter forces a
+  real id recycle — upload A = max id, delete, upload B reuses it — and asserts
+  B's media URLs differ from A's and B serves its own bytes). Frontend
+  `tsc && vite build` clean.
+- **56-check upload acceptance:** 10 successive uploads (landscape/portrait/
+  square) each with content-hash + dims + cache-busted URLs; unique asset/file
+  ids and cache tokens (10/10); thumbnails valid JPEGs with matching aspect;
+  same-filename-different-content → distinct assets + unique storage paths;
+  DB-level unique stored/thumbnail paths, all files present, disk bytes ==
+  uploaded bytes; **the exact bug scenario** — id 13 was recycled (A→B) yet
+  `/media/assets/13?v=36fcb53e977f` (A) ≠ `?v=eecc6e009b73` (B) and B served its
+  own bytes; all 10 still listed after a refresh.
+- **Persistence across a service restart:** all 13 assets returned identical
+  thumbnail bytes after restart.
+- **13-check regression incl. one real Image Modification inference:** job
+  `queued→completed` with a valid generated image + thumbnail (both `?v=`);
+  before/after comparison source unchanged and `resolve_original` returns the
+  correct source bytes with a `?v=` token; gallery image resolves the original;
+  move-to-library (scenes 13→14); favorite toggle. All PASS.
+
+**Operational note — restart without sudo:** `deploy.sh` does not restart the
+service, and `sudo systemctl restart sceneforge` needs a password. In this
+session the service was restarted without sudo by signaling the process (it runs
+as `nmc220`, unit is `Restart=always`): `kill -TERM $(pgrep -f "venv/bin/python
+-m uvicorn")`, then wait ~`RestartSec`+startup (≈10s) for systemd to relaunch it
+with the new code (confirm via a fresh PID + `systemctl is-active`).
 
 ## Conventions
 
