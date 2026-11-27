@@ -350,6 +350,24 @@ def test_inspect_report_structure():
     assert ("1", "image") in combos
 
 
+def test_inspect_handles_list_form_output():
+    # Some ComfyUI classes define `output` as a bare list of types.
+    template = {
+        "1": {"class_type": "ImgSrc", "inputs": {}},
+        "2": {"class_type": "SaveImage", "inputs": {"images": ["1", 0]}},
+    }
+    object_info = {
+        "ImgSrc": {"input": {"required": {}, "optional": {}}, "output": ["IMAGE"]},
+        "SaveImage": {
+            "input": {"required": {"images": [["IMAGE"]]}, "optional": {}},
+            "output": ["IMAGE"],
+        },
+    }
+    report = inspect_workflow(template, object_info)
+    assert "2" in report["output_nodes"]
+    assert "1" not in report["output_nodes"]  # its image feeds node 2
+
+
 def test_inspect_endpoint_returns_report():
     with client:
         response = client.get("/api/workflows/qwen_image_gen_v1/versions/1")

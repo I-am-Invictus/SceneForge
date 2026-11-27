@@ -139,7 +139,15 @@ def _output_nodes(template: dict, object_info: dict, consumed: set) -> list[str]
             continue
         class_spec = object_info.get(class_type)
         if class_spec:
-            out_types = class_spec.get("output", {}).get("type", [])
+            # `output` is either {"type": [...], "name": [...]} or a bare list
+            # of output types, depending on the node class.
+            out_def = class_spec.get("output")
+            if isinstance(out_def, dict):
+                out_types = out_def.get("type", [])
+            elif isinstance(out_def, list):
+                out_types = out_def
+            else:
+                out_types = []
             for index, types in enumerate(out_types):
                 type_list = types if isinstance(types, list) else [types]
                 if "IMAGE" in type_list and (node_id, index) not in consumed:
