@@ -54,12 +54,13 @@ def delete_output(db: Session, client_id: str, output_id: int) -> Job:
                 400, f"Refusing to delete path outside managed storage: {rel_path}"
             )
 
-    # A file is only removed when no other output record references it.
-    # (Generated outputs are never referenced by asset-library records;
-    # those live under separate, disjoint storage paths.)
+    # A file is only removed when no other record references it. Outputs
+    # moved into a library share the asset file's stored path, so asset
+    # records count as references too (deleting such an output keeps the
+    # image in the library).
     removable = []
     for rel_path in candidate_paths:
-        referenced = (
+        output_refs = (
             db.query(JobOutput)
             .filter(JobOutput.id != row.id)
             .filter(
@@ -70,7 +71,17 @@ def delete_output(db: Session, client_id: str, output_id: int) -> Job:
             )
             .count()
         )
-        if referenced == 0:
+        asset_refs = (
+            db.query(AssetFile)
+            .filter(
+                or_(
+                    AssetFile.stored_path == rel_path,
+                    AssetFile.thumbnail_path == rel_path,
+                )
+            )
+            .count()
+        )
+        if output_refs == 0 and asset_refs == 0:
             removable.append(rel_path)
 
     # Commit the DB change first so a storage failure can never leave the

@@ -372,6 +372,25 @@ def test_move_output_unknown_job_or_output_or_folder():
         assert db.get(JobOutput, out_a) is not None
 
 
+def test_delete_moved_output_keeps_library_image():
+    # Deleting an output that was moved into a library must not unlink the
+    # shared file: the asset-library record still references it.
+    client = TestClient(app)
+    client_id, (out_a,) = make_job_with_outputs(1)
+    with SessionLocal() as db:
+        job_outputs.move_output_to_library(db, client_id, out_a, "scene")
+        new_rel = db.get(JobOutput, out_a).stored_path
+    res = client.delete(f"/api/jobs/{client_id}/outputs/{out_a}")
+    assert res.status_code == 200
+    assert res.json()["outputs"] == []
+    # The image file and its library entry survive.
+    assert (data_root() / new_rel).is_file()
+    with SessionLocal() as db:
+        lib_file = db.query(AssetFile).filter(AssetFile.stored_path == new_rel).first()
+        assert lib_file is not None
+        assert client.get(f"/media/assets/{lib_file.id}").status_code == 200
+
+
 def test_move_output_api_endpoint():
     client = TestClient(app)
     client_id, (out_a, out_b) = make_job_with_outputs(2)
