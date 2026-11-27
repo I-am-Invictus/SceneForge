@@ -11,6 +11,7 @@ export interface Workflow {
   description: string
   category: string
   version: number
+  active_version?: number
   enabled: boolean
   inputs: Record<string, WorkflowInput>
   outputs: Record<string, { node_id: string; output_type: string }[]>

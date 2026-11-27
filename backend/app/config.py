@@ -29,6 +29,7 @@ class Settings(BaseSettings):
             "scenes": base / "assets" / "scenes",
             "thumbnails": base / "thumbnails",
             "generated": base / "generated",
+            "workflows": base / "workflows",
             "temporary": base / "temporary",
             "backups": base / "backups",
             "logs": base / "logs",

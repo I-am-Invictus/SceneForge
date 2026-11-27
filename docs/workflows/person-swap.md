@@ -2,6 +2,7 @@
 
 Source: `comfy_ui_workflows_ref/api_PersonSwapWorkflow.json` (read-only reference)
 Inspected against: ComfyUI 0.46.0 on thor128-2 (`http://127.0.0.1:8188/object_info`)
+Registered as: `qwen_person_swap_v1` (v1, `character_swap`) — managed in the app's Workflows page
 
 ## Validity
 

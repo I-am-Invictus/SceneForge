@@ -8,14 +8,15 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+import app.comfyui.registry as registry
 from app.comfyui import ComfyUIError, comfyui_client
 from app.comfyui.adapter import WorkflowAdapter
 from app.comfyui.registry import (
     WorkflowSpec,
     discover_specs,
     load_template,
-    validate_registration,
 )
+from app.comfyui.validation import validate_workflow
 from app.config import get_settings
 from app.models import AssetFile, Job, JobOutput, RegisteredWorkflow
 from app.schemas import JobError
@@ -33,7 +34,12 @@ def clear_spec_cache() -> None:
     get_specs.cache_clear()
 
 
-def get_spec(workflow_id: str) -> WorkflowSpec:
+def get_spec(workflow_id: str, version: int | None = None) -> WorkflowSpec:
+    if version is not None:
+        try:
+            return registry.get_spec(workflow_id, version)
+        except ValueError as exc:
+            raise JobError(404, str(exc))
     for spec in get_specs():
         if spec.id == workflow_id:
             return spec
@@ -89,12 +95,15 @@ async def _resolve_image_input(
 
 
 async def submit_generation(
-    db: Session, workflow_id: str, values: dict
+    db: Session,
+    workflow_id: str,
+    values: dict,
+    ignore_enabled: bool = False,
 ) -> Job:
     spec = get_spec(workflow_id)
     sync_registry(db)
     row = db.get(RegisteredWorkflow, workflow_id)
-    if row is None or not row.enabled:
+    if not ignore_enabled and (row is None or not row.enabled):
         raise JobError(409, f"Workflow {workflow_id} is disabled")
     values = values or {}
     template = load_template(spec)
@@ -203,7 +212,9 @@ async def retrieve_outputs(db: Session, job: Job) -> list[JobOutput]:
     # SaveImage node). Intermediate nodes such as PreviewImage would
     # otherwise be stored as duplicate results.
     try:
-        spec = get_spec(job.workflow_id)
+        # Use the exact workflow version the job was submitted with so an
+        # uploaded revision cannot change which nodes are captured.
+        spec = get_spec(job.workflow_id, job.workflow_version)
         mapped = {m.node_id for mappings in spec.outputs.values() for m in mappings}
         node_outputs = {
             node_id: out
@@ -268,16 +279,33 @@ async def retrieve_outputs(db: Session, job: Job) -> list[JobOutput]:
     return rows
 
 
-async def test_workflow(db: Session, workflow_id: str) -> dict:
-    spec = get_spec(workflow_id)
+async def test_workflow(
+    db: Session,
+    workflow_id: str,
+    version: int | None = None,
+    test_inputs: dict | None = None,
+) -> dict:
+    """Validate a workflow and, if it is valid, submit an actual test
+    generation.
+
+    The returned ``job_client_id`` lets the client poll the job through the
+    normal job endpoints to completion. A workflow is only considered
+    "successfully tested" once that job completes with retrievable outputs —
+    this endpoint reports pre-flight validity and submission, not the final
+    inference outcome.
+    """
+    spec = get_spec(workflow_id, version)
     template = load_template(spec)
-    adapter = WorkflowAdapter(spec, template)
     base_url = get_effective_settings(db)["comfyui_http_url"]
     result: dict = {
         "id": workflow_id,
+        "version": spec.version,
         "connectivity": None,
         "issues": [],
+        "warnings": [],
         "ok": False,
+        "submitted": False,
+        "job_client_id": None,
     }
     status = await comfyui_client.get_status(base_url)
     if not status.connected:
@@ -285,12 +313,32 @@ async def test_workflow(db: Session, workflow_id: str) -> dict:
         result["issues"].append("ComfyUI is unreachable")
         return result
     result["connectivity"] = {"connected": True, "version": status.version}
-    result["issues"].extend(adapter.check_template_integrity())
+
+    object_info: dict | None = None
     try:
         object_info = await comfyui_client.object_info(base_url, max_age=0)
     except ComfyUIError as exc:
-        result["issues"].append(str(exc))
+        result["issues"].append(f"could not fetch ComfyUI node info: {exc}")
+    if object_info is not None:
+        errors, warnings = validate_workflow(spec, template, object_info)
+        result["issues"].extend(errors)
+        result["warnings"].extend(warnings)
+    else:
+        result["issues"].extend(
+            WorkflowAdapter(spec, template).check_template_integrity()
+        )
+
+    if result["issues"]:
+        return result  # not eligible to run
+    result["ok"] = True  # statically valid; proceed to actual inference
+
+    try:
+        job = await submit_generation(
+            db, workflow_id, test_inputs or {}, ignore_enabled=True
+        )
+    except JobError as exc:
+        result["issues"].append(f"test submission failed: {exc.message}")
         return result
-    result["issues"].extend(validate_registration(spec, template, object_info))
-    result["ok"] = not result["issues"]
+    result["submitted"] = True
+    result["job_client_id"] = job.client_id
     return result

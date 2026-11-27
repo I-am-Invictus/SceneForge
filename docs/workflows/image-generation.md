@@ -2,6 +2,7 @@
 
 Source: `comfy_ui_workflows_ref/api_ImageGenerationWorkflow.json` (read-only reference)
 Inspected against: ComfyUI 0.46.0 on thor128-2 (`http://127.0.0.1:8188/object_info`)
+Registered as: `qwen_image_gen_v1` (v1, `general_generation`) — managed in the app's Workflows page
 
 ## Validity
 

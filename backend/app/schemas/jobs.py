@@ -19,7 +19,16 @@ class WorkflowOut(BaseModel):
     description: str
     category: str
     version: int
+    active_version: int | None = None
     enabled: bool
+    inputs: dict[str, WorkflowInputOut] = {}
+    outputs: dict[str, list[dict]] = {}
+
+
+class WorkflowVersionOut(BaseModel):
+    id: str
+    version: int
+    is_active: bool
     inputs: dict[str, WorkflowInputOut] = {}
     outputs: dict[str, list[dict]] = {}
 
@@ -29,10 +38,42 @@ class WorkflowTestResult(BaseModel):
     ok: bool
     connectivity: dict | None
     issues: list[str]
+    version: int | None = None
+    warnings: list[str] = []
+    submitted: bool = False
+    job_client_id: str | None = None
 
 
 class WorkflowPatch(BaseModel):
     enabled: bool | None = None
+    name: str | None = None
+    description: str | None = None
+
+
+class WorkflowUpload(BaseModel):
+    id: str
+    name: str
+    category: str
+    description: str = ""
+    workflow: dict
+    inputs: dict[str, dict] = {}
+    outputs: dict[str, list[dict]] = {}
+
+
+class WorkflowVersionUpload(BaseModel):
+    workflow: dict
+    inputs: dict[str, dict] = {}
+    outputs: dict[str, list[dict]] = {}
+
+
+class WorkflowMappings(BaseModel):
+    inputs: dict[str, dict] = {}
+    outputs: dict[str, list[dict]] = {}
+
+
+class WorkflowTestRequest(BaseModel):
+    version: int | None = None
+    test_inputs: dict = {}
 
 
 class JobOutputOut(BaseModel):

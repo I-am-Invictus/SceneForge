@@ -46,7 +46,8 @@ ComfyUI directly; everything goes through the backend over localhost.
 - **Asset management (edit metadata + reference-safe delete) for Scenes/Characters:** DONE, verified live. See "Asset management" below.
 - **Phase 6 (character swap UI):** DONE, verified live. See "Phase 6 implementation" below.
 - **Gallery Collections + gallery image viewer + reference-management generalization:** DONE, verified live (backend 80 tests + production smoke/acceptance). See "Gallery Collections (this session)" below.
-- Phase 7/8: workflow management UI, unified generation history (placeholder pages exist).
+- **Phase 7 (workflow management):** DONE, backend implemented + 97 backend tests (see "Phase 7 implementation" below). Deploy + live acceptance pending.
+- Phase 8 (unified generation history): not started.
 
 ## STANDING REQUIREMENT — Gallery before/after comparison (Phases 4–6)
 
@@ -391,6 +392,77 @@ Note: live testing created a handful of throwaway jobs/outputs and 4 moved
 library assets in production (intentionally left for inspection — see
 generation history / the Characters and Scenes libraries); no existing data was
 reset.
+
+## Phase 7 implementation (workflow management)
+
+Workflows are now configurable/upgradeable in-app without touching source code.
+Backend: 97 tests (`80` prior + `17` new in `tests/test_workflow_management.py`);
+frontend build clean. Deploy + live acceptance on thor128-2 pending.
+
+**Persistent, versioned storage** (`app/comfyui/registry.py`):
+- Root = `config.data_dirs["workflows"]` = `/var/lib/sceneforge/workflows/`
+  (added to `config.py`). Survives deploys (app dir is rsynced `--delete`).
+- Layout: `{category}/{id}/config.json` (`{id,name,description,category,active_version}`)
+  + `versions/{N}/config.json` (`{version,inputs,outputs}`) + `versions/{N}/workflow.json`.
+  Each version dir is immutable.
+- `migrate_workflows()` (idempotent, called lazily) seeds the persistent root
+  from the repo `workflows/` seed (old single-dir layout) → versioned layout as
+  `v1`, and defensively converts any persistent workflow still in the old layout.
+  Repo seed + `comfy_ui_workflows_ref/` are never modified.
+- `WorkflowSpec` gained `active_version` + `version_dir`; `get_spec(id, version=None)`,
+  `list_versions`, `workflow_meta`, `save_new_workflow`, `save_new_version`,
+  `save_mappings`, `set_active_version`, `update_meta`, `load_template` (reads
+  `version_dir/workflow.json`). Existing validation helpers unchanged.
+
+**Validation** (`app/comfyui/validation.py`): `validate_workflow(spec, template,
+object_info) -> (errors, warnings)`. Errors block execution (template integrity,
+missing custom nodes, invalid mappings, no output mapping, missing *core* models,
+input-type/ComfyUI-field type incompatibility). Warnings are non-blocking
+(missing LoRAs).
+
+**Inspection** (`app/comfyui/inspection.py`): `inspect_workflow(template,
+object_info)` → node report (per-node class + inputs with ComfyUI types/options,
+image loaders, terminal output nodes via link analysis, custom + missing
+classes, referenced models with found/missing, and name/type-based hints for
+text/seed/dimension/number/boolean/combo). Node semantics are surfaced as
+hints; mapping is always set explicitly by the user. `object_info=None` (ComfyUI
+down) degrades gracefully.
+
+**Generation** (`app/services/generation.py`): `get_spec(id, version=None)`
+version-aware; `retrieve_outputs` uses the job's recorded `workflow_version`
+(an uploaded revision cannot change which nodes past jobs capture);
+`submit_generation(..., ignore_enabled=False)` (disabled check bypassed only for
+tests); `test_workflow(id, version=None, test_inputs=None)` validates (errors +
+warnings), then, if eligible, submits a real monitored job via
+`submit_generation(..., ignore_enabled=True)` and returns `job_client_id` — the
+client polls the job to completion; "success" is only after real inference +
+output retrieval.
+
+**API** (`app/api/workflows.py`): existing list/get/patch/test extended + new
+`POST /api/workflows` (upload new workflow, disabled by default),
+`GET/POST /{id}/versions`, `GET /{id}/versions/{v}` (inspection report + full
+mappings), `GET /{id}/versions/{v}/template` (raw JSON, for new-version prefill),
+`PUT /{id}/versions/{v}/mappings`, `POST /{id}/versions/{v}/validate`,
+`POST /{id}/versions/{v}/activate`, `POST /{id}/test` (version-aware +
+`test_inputs`). New schemas in `app/schemas/jobs.py` (`WorkflowVersionOut`,
+`WorkflowUpload`, `WorkflowVersionUpload`, `WorkflowMappings`,
+`WorkflowTestRequest`; `WorkflowOut` + `active_version`, `WorkflowTestResult` +
+`warnings/submitted/job_client_id`). Node IDs stay **strings** (person-swap uses
+`"15:20"`).
+
+**Frontend** (`src/pages/Workflows.tsx`, `src/services/workflows.ts`,
+`src/types/workflows.ts`): full management UI — workflow cards (category +
+enabled badge + active version), detail view (version list + set-active, node
+inspection panel, mapping editor with node/field dropdowns from the report,
+validate → errors/warnings, real test generation with dynamic per-type form
+incl. image asset picker + job polling), upload dialog (API-format JSON),
+new-version dialog (prefilled from the current template + mappings), enable/disable,
+edit name/description. New `.wf-*` styles in `src/styles.css`. The Gen/Mod/Swap
+pages are unchanged (still resolve the enabled workflow by category).
+
+**Key invariants:** no new DB tables (versions live on disk; `jobs` already
+records `workflow_id`/`workflow_version`/`inputs_json`); disabling blocks *new*
+jobs only; each version immutable; migration idempotent.
 
 ## Conventions
 
