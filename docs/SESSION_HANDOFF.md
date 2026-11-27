@@ -44,7 +44,7 @@ ComfyUI directly; everything goes through the backend over localhost.
 - **Phase 4 (general generation UI):** DONE, verified live (form, live progress, cancel, results gallery, generated-only comparison).
 - **Phase 5 (image modification UI) + generated-image deletion + move-to-library:** DONE, verified live (mode-aware source picker over Characters/Scenes, upload, before/after comparison with real sources, output deletion, move results into either library, live ComfyUI jobs). See "Phase 5 implementation" below.
 - **Asset management (edit metadata + reference-safe delete) for Scenes/Characters:** DONE, verified live. See "Asset management" below.
-- **Phase 6 (character swap UI):** NOT STARTED.
+- **Phase 6 (character swap UI):** DONE, verified live. See "Phase 6 implementation" below.
 - Phase 7/8: workflow management UI, unified generation history (placeholder pages exist).
 
 ## STANDING REQUIREMENT — Gallery before/after comparison (Phases 4–6)
@@ -199,6 +199,120 @@ round, 43 API/byte-level checks, all PASS:**
 - Browser-side visuals (mode chips, picker per mode, move dialog, slider)
   deployed; the user has exercised the move action in-browser (one image
   already lives in Scenes from that).
+
+## Monitor reliability fixes (this session)
+
+Two backend defects in `app/services/monitor.py` were found and fixed, both
+live-verified on thor128-2.
+
+- **Submit-window race** — `submit_generation` commits a job as `queued`
+  *before* `comfyui_client.submit_prompt` returns its `comfyui_prompt_id`
+  (the id is assigned and committed afterwards). The 8s resync failed any
+  `queued` job with no prompt_id as "Prompt was never submitted to ComfyUI",
+  so a resync landing in that window (observed under 3 concurrent submits)
+  falsely marked a job failed even though the prompt actually landed and the
+  job later completed. Fix: `SUBMIT_GRACE_SECONDS = 15.0` — a freshly-queued
+  job without a prompt_id younger than the grace is skipped; genuinely stuck
+  jobs (crash mid-submit) still fail after the grace. Tests:
+  `test_resync_skips_fresh_queued_job_without_prompt_id`,
+  `test_resync_fails_old_queued_job_without_prompt_id`.
+- **Outputs before completed** — `_complete` marked a job `completed` and
+  committed *before* `retrieve_outputs` stored its images, so a reader (the UI
+  polls every 2.5s) could catch a completed job with no outputs and show "no
+  image outputs" until a refresh. Fix: `_complete` now awaits
+  `retrieve_outputs` first, then flips to `completed`, so a job reads
+  `completed` only once its images are stored. Test:
+  `test_complete_retrieves_outputs_before_marking_completed`.
+
+## Add-to-Library consolidation
+
+The move-to-library behavior (pending target, `POST .../move` call, job-list
+upsert) lived inline in `ImageModification.tsx` and was missing entirely from
+`GeneralGeneration.tsx`. It is now a shared hook,
+`frontend/src/hooks/useMoveToLibrary.ts`, used identically by General
+Generation, Image Modification, and Character Swapping — so all three show the
+same "Move to library" action on gallery cards and in the result viewer, and
+behave identically.
+
+## Width/height mapping investigation
+
+Reported symptom: General Generation portrait 768×1024 (width 768, height
+1024) came back landscape 1024×768. **Not reproduced** — no inversion exists in
+the pipeline, so no swap fix was added (no speculative swaps). Evidence:
+- Frontend (`GeneralGeneration.tsx`): width/height are separate fields;
+  presets are correct (e.g. `3:4` = 896×1152 portrait). Sends
+  `inputs.width` / `inputs.height` independently.
+- Config (`qwen_image_gen_v1/config.json`): `width→node15.width`,
+  `height→node15.height` (node 15 = `EmptyLatentImage`). No swap.
+- Adapter (`WorkflowAdapter._coerce`): width/height coerced independently.
+- Live (deployed code, ComfyUI 0.46.0): portrait 768×1024 → **768×1024**,
+  landscape 1024×768 → **1024×768**, square 1024×1024 → **1024×1024**. Output
+  dims equal the `EmptyLatentImage` dims (VAEDecode decodes the sampler's
+  latent directly), confirming node 15 received the correct width/height.
+  Historical 832×1216 portrait jobs also returned 832×1216.
+
+## Phase 6 implementation (character swap)
+
+**Page:** `frontend/src/pages/CharacterSwap.tsx` at `/swap` (replaces the
+placeholder). Drives `qwen_person_swap_v1` (category `character_swap`), a
+faithful copy of `comfy_ui_workflows_ref/api_PersonSwapWorkflow.json` (AusBoss
+"Qwen Image 2.1 Person Swap"; output node 18 = `AUSBOSS_NODES_SaveImage`,
+prefix `qwen21_person_swap`). Reuses the shared job polling, `JobGallery`,
+`JobResultViewer` + `ImageComparison` (before = **scene**, after = result),
+`useMoveToLibrary`, and output deletion — no new infra.
+
+- **Inputs:** scene (`scene_image`, required), character (`character_1`,
+  required), who-to-replace (`composition_prompt`, may be blank for a single
+  person — the workflow's `RegexReplace` node 15:24 rewrites empty "who" to
+  one-person wording), whole-body/head-only (`swap_mode` bool, default whole
+  body), seed (random/fixed), steps (default 25).
+- **Scene/character selection:** two `SourceImagePicker`s — the scene picker
+  lists/uploads the **Scenes** library, the character picker the **Characters**
+  library. Comparison original resolves from
+  `job.inputs.scene_image.asset_file_id`.
+- **Single character only:** the API export contains one character `LoadImage`
+  (node 3); the author's "Second character" nodes are bypassed in the UI and
+  absent from the API JSON, so a second character is **not supported** (no
+  misleading control is added). One reference image per character.
+
+**Workflow mapping (`qwen_person_swap_v1`):**
+scene_image→2(image), character_1→3(image), composition_prompt→4(text),
+swap_mode→5(value, bool), seed→6(seed), steps→53(value, number, default 25);
+outputs: images→18 (SaveImage). The workflow itself resizes the scene to ~2 MP
+(node 16:40) and the character to ~0.59 MP (node 16:41); the model is selected
+by `swap_mode` (body LoRA node 10 vs head LoRA node 11) via `ComfySwitchNode`
+16:43.
+
+## Stage 1–5 regression gate (this session)
+
+Executed live on thor128-2 (ComfyUI 0.46.0), all PASS:
+- **Stage 1 (monitor):** 3 concurrent general-generation submits → all
+  completed with outputs, **zero** false "never submitted" failures (race fix).
+  A person-swap job's first read as `completed` already had its output stored
+  (outputs-before-completed fix).
+- **Stage 2 (workflow integrity):** `POST /api/workflows/{id}/test` → all three
+  workflows `ok: true` (connectivity + node registration against ComfyUI).
+- **Stage 3 (asset integrity):** 4-combo move-to-library below — each moved
+  output's bytes landed in `assets/{kind}/...`, the asset file and the job
+  output share the stored path (refcount 1), files exist on disk.
+- **Stage 4 (comparison):** before/after media 200 for a person-swap
+  (scene + result) and an image-mod (source + result).
+- **Stage 5 (gen + mod):** general-generation and image-modification jobs run
+  to completion with captured outputs.
+
+**Add-to-Library 4-combo live test (real generated outputs), all PASS:**
+Gen→Characters, Gen→Scenes, Mod→Characters, Mod→Scenes — each moved image
+appeared in the correct library (count +1, correct kind), stayed in the job's
+results (`/media/job-assets/{id}` 200), and its bytes were in the right
+`assets/{kind}/` folder.
+
+Backend: **69 pytest tests green** (66 + 2 submit-race tests + 1
+outputs-before-completed test). Frontend: `tsc && vite build` clean.
+
+Note: live testing created a handful of throwaway jobs/outputs and 4 moved
+library assets in production (intentionally left for inspection — see
+generation history / the Characters and Scenes libraries); no existing data was
+reset.
 
 ## Conventions
 
