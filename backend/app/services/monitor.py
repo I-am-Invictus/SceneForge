@@ -20,6 +20,10 @@ RESYNC_INTERVAL = 8.0
 # ComfyUI's queue/history must reflect it. Guards the brief window between a
 # prompt leaving the queue and its history entry being written.
 LOST_GRACE_SECONDS = 30.0
+# A job is committed as "queued" before submit_prompt returns its ComfyUI
+# prompt_id. Don't declare that window a lost prompt — give the submission
+# time to land before concluding it was never submitted.
+SUBMIT_GRACE_SECONDS = 15.0
 
 
 class JobMonitor:
@@ -166,6 +170,10 @@ class JobMonitor:
                     queued_ids.add(item[1])
             for job in active:
                 if job.status == "queued" and not job.comfyui_prompt_id:
+                    if self._job_age_seconds(job) < SUBMIT_GRACE_SECONDS:
+                        # submit_generation is still assigning the prompt_id;
+                        # don't conclude the prompt was never submitted.
+                        continue
                     job.status = "failed"
                     job.error = "Prompt was never submitted to ComfyUI"
                     job.finished_at = utcnow()

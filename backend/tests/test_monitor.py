@@ -179,6 +179,32 @@ def test_resync_fails_old_job_without_history(monkeypatch):
         assert "Lost" in row.error
 
 
+def test_resync_skips_fresh_queued_job_without_prompt_id(monkeypatch):
+    # Regression: submit_generation commits a job as "queued" before its
+    # prompt_id is assigned. A resync landing in that window must not fail it.
+    with SessionLocal() as db:
+        job = make_job(db, "queued", None)
+        job_id = job.id
+    run_resync(monkeypatch, {"running": [], "pending": []}, None)
+    with SessionLocal() as db:
+        assert db.get(Job, job_id).status == "queued"
+
+
+def test_resync_fails_old_queued_job_without_prompt_id(monkeypatch):
+    # A queued job that is old enough that the prompt_id should have been
+    # assigned (but wasn't, e.g. a crash mid-submit) is still failed.
+    with SessionLocal() as db:
+        job = make_job(db, "queued", None)
+        job.created_at = utcnow() - timedelta(seconds=120)
+        db.commit()
+        job_id = job.id
+    run_resync(monkeypatch, {"running": [], "pending": []}, None)
+    with SessionLocal() as db:
+        row = db.get(Job, job_id)
+        assert row.status == "failed"
+        assert "never submitted" in row.error
+
+
 def test_resync_skips_cycle_when_queue_unreachable(monkeypatch):
     with SessionLocal() as db:
         job = make_job(db, "running", "p1")
