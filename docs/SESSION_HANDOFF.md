@@ -581,6 +581,52 @@ as `nmc220`, unit is `Restart=always`): `kill -TERM $(pgrep -f "venv/bin/python
 -m uvicorn")`, then wait ~`RestartSec`+startup (≈10s) for systemd to relaunch it
 with the new code (confirm via a fresh PID + `systemctl is-active`).
 
+## Developer Options — one-action data reset (this session)
+
+A hidden-by-default "Developer Options" section in the left nav exposes a single
+deliberate "Reset Application Data" action, reusing the **same** reset code path
+as the CLI (`app/services/reset.py`) so there is one implementation, not two.
+
+- **Gating:** `SCENEFORGE_DEV_MODE` env (field `sceneforge_dev_mode`, default
+  off). When off, `POST /api/developer/reset` returns 404 (not 403) so the route
+  is not disclosed, and the nav section is hidden. `GET /api/developer/status`
+  returns only `{"dev_mode": bool}` for the UI.
+- **Safety:** POST-only; the request body must contain the literal word `RESET`
+  (typed by the user in `ResetDataDialog` before the destructive button enables).
+  Hiding the nav is *not* the security boundary.
+- **Deletes:** all image files and their DB records — `assets`, `asset_files`,
+  `jobs`, `job_outputs`, `galleries`, `gallery_images` — plus everything under
+  `assets/`, `thumbnails/`, `generated/`, `temporary/` (including orphans).
+- **Preserves:** the DB file/schema, `folders`, `settings`, `workflows` (+
+  versions/configs), and ComfyUI models/custom nodes.
+- **Implementation:** `app/services/reset.py` — stdlib-only. A lock
+  (`reset_exclusive` for the reset, `writer_guard` for create/upload/generate and
+  the monitor's output storage) prevents concurrent writes during a reset. It
+  backs up the DB to `backups/`, clears the image rows in a transaction, wipes
+  the image dirs, and returns a structured `ResetReport` (never raises). The
+  endpoint runs it in a thread and maps ok→200 / failure→500 with diagnostics.
+- **Frontend:** `DeveloperOptions` page with a `Danger Zone` card +
+  `ResetDataDialog` (lists exactly what is deleted, requires typing `RESET`); on
+  success it does a full `window.location.replace("/")` so the app reloads into
+  the empty first-run state with all caches/state cleared.
+- **CLI:** `scripts/reset_image_data.py` is now a thin wrapper over the shared
+  service (same code path).
+- **Tests:** `backend/tests/test_developer_reset.py` (9 tests): config env
+  mapping, status, dev-gating (404 off / no-op), typed-confirm (wrong/missing),
+  GET no-op, success + preservation, repeated resets, and structured failure
+  reporting.
+- **Toggle:** add/remove `SCENEFORGE_DEV_MODE=1` in `/opt/sceneforge/.env`, then
+  restart the service.
+
+**Current production state (thor128-2):** Developer Options is **enabled**
+(`SCENEFORGE_DEV_MODE=1` in `/opt/sceneforge/.env`) at the user's request; the
+system is in an empty first-run state (image tables 0; folders/settings/workflows
+preserved). Pre-reset DB backups are in `/var/lib/sceneforge/backups/`
+(`sceneforge.db.*.pre-reset`, DB-only). Caveat: an end-to-end verification reset
+ran against production and cleared 9 pre-existing user assets (their image files
+are not recoverable; DB metadata is in the latest backup). Verify destructive
+actions against a temp `SCENEFORGE_DATA_DIR`, never production.
+
 ## Conventions
 
 - Backend: FastAPI + SQLAlchemy 2.0 sync sessions (`SessionLocal`), Pydantic schemas in `app/schemas/`, services in `app/services/`. Tests in `backend/tests/` (pytest; `tests/test_assets.py` sets a temp `SCENEFORGE_DATA_DIR` at import and other test modules import from it).
