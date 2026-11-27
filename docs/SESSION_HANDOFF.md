@@ -43,6 +43,7 @@ ComfyUI directly; everything goes through the backend over localhost.
   - Critical monitor facts: one stable `comfyui_client.monitor_client_id` is used both as the WS `clientId` **and** the prompt `client_id` (ComfyUI routes `execution_start/success/error` to the submitting client_id, not broadcast). Periodic resync (8s) + 30s lost-grace as safety net. `/queue` items are `[number, prompt_id, ...]` under keys `queue_running`/`queue_pending`.
 - **Phase 4 (general generation UI):** DONE, verified live (form, live progress, cancel, results gallery, generated-only comparison).
 - **Phase 5 (image modification UI) + generated-image deletion + move-to-library:** DONE, verified live (mode-aware source picker over Characters/Scenes, upload, before/after comparison with real sources, output deletion, move results into either library, live ComfyUI jobs). See "Phase 5 implementation" below.
+- **Asset management (edit metadata + reference-safe delete) for Scenes/Characters:** DONE, verified live. See "Asset management" below.
 - **Phase 6 (character swap UI):** NOT STARTED.
 - Phase 7/8: workflow management UI, unified generation history (placeholder pages exist).
 
@@ -136,6 +137,48 @@ generation workflow.
 source_image→8(image), prompt→3(prompt), negative_prompt→4(prompt),
 width/height→9 (auto: source), batch_size→9, seed/steps/denoise→2;
 outputs: images→30 (SaveImage, `filename_prefix: sceneforge_edit`).
+
+## Asset management (edit metadata + reference-safe deletion)
+
+**Metadata editing** — `Asset` gained `description` (TEXT) and `tags`
+(TEXT, JSON array string) columns; `init_db()` applies an idempotent
+`migrate_legacy_columns()` ALTER for pre-existing SQLite databases
+(verified on production). `PATCH /api/libraries/{kind}/assets/{id}` now
+accepts `name` / `description` ("" clears) / `tags` ([] clears; deduped,
+max 20 × 50 chars) / `is_favorite` individually. UI: compact
+`EditAssetDialog` (prepopulated) from a new Edit action on asset cards and
+the detail page (supersedes the Rename dialog, which was removed); the
+detail page renders description + tag chips. Saves never touch image files,
+thumbnails, IDs, or references; changes persist across refresh and service
+restart (live-verified).
+
+**Reference-safe deletion** — `DELETE /api/libraries/{kind}/assets/{id}`
+always removes the library records, but image bytes are only unlinked when
+no other record references them:
+- `JobOutput.stored_path` / `thumbnail_path` equal to the file's paths
+  (moved outputs share the asset file's stored path);
+- `Job.inputs_json` containing `"asset_file_id": <id>` (historical source
+  associations for before/after comparisons).
+Kept bytes stay servable via the job media endpoints; the asset's own
+thumbnail is always removed (job outputs have their own). Path safety:
+files outside the managed base are refused (logged, skipped); missing
+files and unlink OSErrors are tolerated; unknown assets → 404. UI: delete
+action on cards (with a confirmation dialog naming the asset and noting
+job-used images are kept) — the detail-page delete predates this.
+
+**Live verification (thor128-2), all PASS:** migration added the columns to
+the production DB with rows intact; scene + character metadata edits
+persisted after a service restart; throwaway scene + character deletes
+unlinked files and left the libraries clean; a user browser-deletion of a
+scene asset whose image was a moved job output (output 18) removed the
+library entry while the file and `/media/job-assets/18` kept working;
+Image Modification, general generation, history, and comparisons all
+regression-checked. Backend: **66 pytest tests green** (58 + 8 new).
+Frontend: `tsc && vite build` clean.
+Note: during the first live run, two unreferenced orphan files appeared
+after deletion (DB stayed consistent); not reproducible afterwards (4/4
+clean deletes), the orphans were removed manually, and deletion now logs
+outcomes (refusals/failures at WARNING) for future diagnosis.
 
 **Live verification actually executed (thor128-2, ComfyUI 0.46.0) — latest
 round, 43 API/byte-level checks, all PASS:**
