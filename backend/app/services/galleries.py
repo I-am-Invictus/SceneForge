@@ -5,6 +5,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models import AssetFile, Gallery, GalleryImage, Job, JobOutput
+from app.services.images import media_token
 
 logger = logging.getLogger(__name__)
 
@@ -215,7 +216,7 @@ def resolve_original(db: Session, job: Job) -> dict | None:
     if asset_file is None:
         return None
     return {
-        "url": f"/media/assets/{asset_file.id}",
+        "url": f"/media/assets/{asset_file.id}?v={media_token(asset_file.stored_path)}",
         "width": asset_file.width,
         "height": asset_file.height,
         "alt": asset_file.display_name,

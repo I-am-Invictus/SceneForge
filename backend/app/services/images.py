@@ -1,3 +1,4 @@
+import hashlib
 import io
 from pathlib import Path
 
@@ -63,3 +64,17 @@ def display_name_from_filename(filename: str) -> str:
     name = Path(Path(filename).name).stem
     name = " ".join(name.split())
     return name[:200] if name else "Untitled"
+
+
+def media_token(rel_path: str | None) -> str:
+    """Short per-file token derived from the stored path, for cache-busting.
+
+    Media is served under the database primary key, which SQLite recycles once
+    the highest rowid is deleted. Keying the browser cache on that id alone lets
+    a reused id serve a previously deleted image. The stored path is unique per
+    file and is never reused, so a token derived from it keeps each media URL's
+    cache entry unambiguous for the file's lifetime.
+    """
+    if not rel_path:
+        return "0"
+    return hashlib.sha1(rel_path.encode("utf-8")).hexdigest()[:12]

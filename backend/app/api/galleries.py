@@ -15,6 +15,7 @@ from app.schemas.galleries import (
 )
 from app.services import galleries as gallery_service
 from app.services.galleries import GalleryError
+from app.services.images import media_token
 
 router = APIRouter(tags=["galleries"])
 
@@ -32,9 +33,10 @@ def _cover(db: Session, members: list[GalleryImage]) -> GalleryCover | None:
         return None
     job = out.job
     label = (job.prompt if job else None) or out.comfyui_filename
+    token = media_token(out.stored_path)
     return GalleryCover(
-        thumbnail_url=f"/media/job-thumbnails/{out.id}",
-        original_url=f"/media/job-assets/{out.id}",
+        thumbnail_url=f"/media/job-thumbnails/{out.id}?v={token}",
+        original_url=f"/media/job-assets/{out.id}?v={token}",
         width=out.width,
         height=out.height,
         label=label,
@@ -67,8 +69,8 @@ def _serialize_image(db: Session, member: GalleryImage) -> GalleryImageOut:
         prompt=job.prompt if job else None,
         width=out.width,
         height=out.height,
-        thumbnail_url=f"/media/job-thumbnails/{out.id}",
-        original_url=f"/media/job-assets/{out.id}",
+        thumbnail_url=f"/media/job-thumbnails/{out.id}?v={media_token(out.stored_path)}",
+        original_url=f"/media/job-assets/{out.id}?v={media_token(out.stored_path)}",
         original=GalleryOriginal(**original) if original else None,
     )
 

@@ -254,7 +254,9 @@ def test_move_output_to_character_library():
     res = client.get(f"/api/jobs/{client_id}")
     assert res.status_code == 200
     assert [o["id"] for o in res.json()["outputs"]] == [out_a]
-    assert res.json()["outputs"][0]["original_url"] == f"/media/job-assets/{out_a}"
+    assert res.json()["outputs"][0]["original_url"].startswith(
+        f"/media/job-assets/{out_a}?v="
+    )
 
 
 def test_move_output_to_scene_library():

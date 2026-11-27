@@ -16,6 +16,7 @@ from app.services import assets as asset_service
 from app.services.assets import AssetError, parse_tags, prepare_upload
 from app.services import folders as folder_service
 from app.services.folders import FolderError
+from app.services.images import media_token
 
 router = APIRouter(prefix="/api/libraries/{kind}", tags=["assets"])
 
@@ -32,6 +33,7 @@ def _raise_service_error(exc: AssetError | FolderError) -> None:
 
 
 def serialize_file(asset_file) -> AssetFileOut:
+    token = media_token(asset_file.stored_path)
     return AssetFileOut(
         id=asset_file.id,
         display_name=asset_file.display_name,
@@ -42,8 +44,8 @@ def serialize_file(asset_file) -> AssetFileOut:
         is_default=asset_file.is_default,
         sort_order=asset_file.sort_order,
         created_at=asset_file.created_at,
-        thumbnail_url=f"/media/thumbnails/{asset_file.id}",
-        original_url=f"/media/assets/{asset_file.id}",
+        thumbnail_url=f"/media/thumbnails/{asset_file.id}?v={token}",
+        original_url=f"/media/assets/{asset_file.id}?v={token}",
     )
 
 
@@ -51,6 +53,7 @@ def serialize_asset(asset: Asset) -> AssetOut:
     files = [serialize_file(f) for f in asset.files]
     default = next((f for f in asset.files if f.is_default), None)
     thumb = default or (asset.files[0] if asset.files else None)
+    token = media_token(thumb.stored_path) if thumb else "0"
     return AssetOut(
         id=asset.id,
         kind=asset.kind,
@@ -62,7 +65,7 @@ def serialize_asset(asset: Asset) -> AssetOut:
         created_at=asset.created_at,
         updated_at=asset.updated_at,
         files=files,
-        thumbnail_url=f"/media/thumbnails/{thumb.id}" if thumb else None,
+        thumbnail_url=f"/media/thumbnails/{thumb.id}?v={token}" if thumb else None,
         reference_count=len(asset.files),
     )
 

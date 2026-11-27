@@ -265,6 +265,56 @@ def test_delete_asset_removes_files():
         assert client.get(asset["files"][0]["thumbnail_url"]).status_code == 404
 
 
+def test_media_token_stable_and_unique():
+    from app.services.images import media_token
+
+    assert media_token("assets/scene/abc/123.png") == media_token(
+        "assets/scene/abc/123.png"
+    )
+    assert media_token("assets/scene/abc/123.png") != media_token(
+        "assets/scene/abc/124.png"
+    )
+    assert media_token(None) == "0"
+    assert len(media_token("x")) == 12
+
+
+def test_media_url_stable_across_asset_file_id_recycling():
+    """A recycled file id must not reuse a media URL, or the browser serves a
+    previously deleted image from cache for the new upload."""
+    from sqlalchemy import func, select
+
+    from app.database.db import SessionLocal
+    from app.models import AssetFile
+
+    red = make_image((48, 32), (255, 0, 0))
+    blue = make_image((48, 32), (0, 0, 255))
+    with SessionLocal() as db:
+        max_id = db.scalar(select(func.max(AssetFile.id))) or 0
+
+    with TestClient(app) as client:
+        # First upload takes the next (highest) rowid.
+        (asset_a,) = upload(client, "scene", files=[("a.png", red)]).json()
+        (file_a,) = asset_a["files"]
+        assert file_a["id"] == max_id + 1
+        orig_a, thumb_a = file_a["original_url"], file_a["thumbnail_url"]
+
+        # Deleting it removes the highest rowid, making it recyclable.
+        deleted = client.delete(f"/api/libraries/scene/assets/{asset_a['id']}")
+        assert deleted.status_code == 204
+
+        # Next upload reuses that rowid (INTEGER PRIMARY KEY, no AUTOINCREMENT).
+        (asset_b,) = upload(client, "scene", files=[("b.png", blue)]).json()
+        (file_b,) = asset_b["files"]
+        assert file_b["id"] == max_id + 1, "expected the deleted file id to be recycled"
+
+        # The recycled id must yield different media URLs (distinct cache
+        # tokens), otherwise the browser serves the deleted image (a) for (b).
+        assert file_b["original_url"] != orig_a
+        assert file_b["thumbnail_url"] != thumb_a
+        # And the new file serves its own bytes.
+        assert client.get(file_b["original_url"]).content == blue
+
+
 def test_restart_persistence():
     with TestClient(app) as client:
         (asset,) = upload(

@@ -13,12 +13,14 @@ from app.schemas.jobs import (
     JobOutputOut,
 )
 from app.services import generation, job_outputs
+from app.services.images import media_token
 from app.services.monitor import job_monitor
 
 router = APIRouter(tags=["jobs"])
 
 
 def _serialize_output(row: JobOutput) -> JobOutputOut:
+    token = media_token(row.stored_path)
     return JobOutputOut(
         id=row.id,
         node_id=row.node_id,
@@ -26,8 +28,8 @@ def _serialize_output(row: JobOutput) -> JobOutputOut:
         width=row.width,
         height=row.height,
         size_bytes=row.size_bytes,
-        thumbnail_url=f"/media/job-thumbnails/{row.id}",
-        original_url=f"/media/job-assets/{row.id}",
+        thumbnail_url=f"/media/job-thumbnails/{row.id}?v={token}",
+        original_url=f"/media/job-assets/{row.id}?v={token}",
     )
 
 
