@@ -313,9 +313,17 @@ def move_asset(
 
 def _delete_file_on_disk(path_rel: str) -> None:
     try:
-        _resolve_stored(path_rel).unlink(missing_ok=True)
+        path = _resolve_stored(path_rel)
     except AssetError:
-        pass
+        logger.warning("Refusing to delete file outside managed storage: %s", path_rel)
+        return
+    try:
+        path.unlink(missing_ok=True)
+        logger.info("Deleted asset file %s", path_rel)
+    except OSError as exc:
+        # The DB row is removed by the caller; an orphaned file is cosmetic
+        # and must not fail the deletion.
+        logger.warning("Could not delete %s: %s", path_rel, exc)
 
 
 def _path_referenced_by_outputs(db: Session, rel_path: str) -> bool:
