@@ -46,7 +46,7 @@ ComfyUI directly; everything goes through the backend over localhost.
 - **Asset management (edit metadata + reference-safe delete) for Scenes/Characters:** DONE, verified live. See "Asset management" below.
 - **Phase 6 (character swap UI):** DONE, verified live. See "Phase 6 implementation" below.
 - **Gallery Collections + gallery image viewer + reference-management generalization:** DONE, verified live (backend 80 tests + production smoke/acceptance). See "Gallery Collections (this session)" below.
-- **Phase 7 (workflow management):** DONE, backend implemented + 97 backend tests (see "Phase 7 implementation" below). Deploy + live acceptance pending.
+- **Phase 7 (workflow management):** DONE, verified live (101 backend tests + production acceptance on thor128-2). See "Phase 7 implementation" below.
 - Phase 8 (unified generation history): not started.
 
 ## STANDING REQUIREMENT — Gallery before/after comparison (Phases 4–6)
@@ -396,8 +396,9 @@ reset.
 ## Phase 7 implementation (workflow management)
 
 Workflows are now configurable/upgradeable in-app without touching source code.
-Backend: 97 tests (`80` prior + `17` new in `tests/test_workflow_management.py`);
-frontend build clean. Deploy + live acceptance on thor128-2 pending.
+101 backend tests (`80` prior + `21` new in `tests/test_workflow_management.py`);
+frontend build clean. Deployed + live-accepted on thor128-2 (see "Phase 7 live
+acceptance" below).
 
 **Persistent, versioned storage** (`app/comfyui/registry.py`):
 - Root = `config.data_dirs["workflows"]` = `/var/lib/sceneforge/workflows/`
@@ -463,6 +464,43 @@ pages are unchanged (still resolve the enabled workflow by category).
 **Key invariants:** no new DB tables (versions live on disk; `jobs` already
 records `workflow_id`/`workflow_version`/`inputs_json`); disabling blocks *new*
 jobs only; each version immutable; migration idempotent.
+
+### Phase 7 live acceptance (thor128-2)
+
+Verified against live ComfyUI 0.46.0 after deploy + service restart:
+
+- **Migration:** all 3 built-ins seeded to `/var/lib/sceneforge/workflows/` in
+  the versioned layout (`config.json` + `versions/1/{config.json,workflow.json}`);
+  legacy top-level `workflow.json` removed; idempotent on restart.
+- **Inspect + validate:** all 3 built-ins → `ok=true`, 0 errors, 0 warnings
+  (node counts 9/9/28; correct output nodes; no missing classes/models).
+- **Execute (real inference):** gen, image-edit, and person-swap each submitted a
+  real job via `POST /api/workflows/{id}/test`, polled to `completed` with 1
+  output; jobs recorded `workflow_version=1`.
+- **Upload → validate → test:** a freshly uploaded workflow (201, disabled)
+  validates and runs a real test to completion (version-aware retrieval).
+- **Validation failure:** a workflow referencing a missing class reports
+  `ok=false` with the missing-class error (+ "no output mapping").
+- **Version management:** new version becomes active (`v2`), version list shows
+  both, "set active v1" switches `active_version` back.
+- **Disable gating:** disabling a workflow makes `POST /api/generate/{id}`
+  return 409; re-enabling restores it. Existing jobs unaffected.
+- **Regression gate:** health, comfyui status, workflows, jobs, scene/character
+  libraries (incl. `?favorite=true`), galleries, settings all 200; index.html
+  served; gen/mod/swap each resolve exactly one enabled workflow by category.
+
+**Bugs found + fixed during live acceptance** (unit tests couldn't catch them —
+they only manifest with real ComfyUI / same-session uploads):
+1. `inspect_workflow` crashed on node classes whose `output` is a bare **list**
+   of types (not a `{type,name}` dict) — normalized both forms.
+2. `validate_version` called the async `object_info` helper without `await` and
+   read `spec.template` instead of `load_template(spec)`.
+3. Validation falsely flagged `image`→combo mappings; `LoadImage.image` is a
+   combo file-picker, so `image` (and `combo`) are valid for combo fields.
+4. `get_specs()` was `lru_cached`; `submit_generation` resolved the active spec
+   from that cache, so a workflow uploaded in the same session was "Unknown" and
+   testing a non-active version used the active template. `get_spec` now always
+   reads from disk and threads the requested version through `submit_generation`.
 
 ## Conventions
 
