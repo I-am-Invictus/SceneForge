@@ -63,6 +63,9 @@ interface JobResultViewerProps {
   /** When provided, shows a move-to-library action for the currently
    *  displayed output. */
   onMoveOutput?: (clientId: string, outputId: number) => void
+  /** When provided, shows an add-to-gallery action for the currently
+   *  displayed output. */
+  onAddToGallery?: (clientId: string, outputId: number) => void
 }
 
 export function JobResultViewer({
@@ -75,6 +78,7 @@ export function JobResultViewer({
   onCancel,
   onDeleteOutput,
   onMoveOutput,
+  onAddToGallery,
 }: JobResultViewerProps) {
   const [outputIndex, setOutputIndex] = useState(0)
   useEffect(() => {
@@ -177,6 +181,16 @@ export function JobResultViewer({
           >
             <Icon name="moveToLibrary" size={14} />
             Move to library
+          </button>
+        )}
+        {onAddToGallery && (
+          <button
+            type="button"
+            className="btn secondary job-delete-btn"
+            onClick={() => onAddToGallery(job.client_id, output.id)}
+          >
+            <Icon name="galleries" size={14} />
+            Add to gallery
           </button>
         )}
         {onDeleteOutput && (

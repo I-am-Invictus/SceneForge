@@ -28,6 +28,9 @@ interface JobGalleryProps {
   /** When provided, each card shows a move-to-library action for its
    *  displayed (first) output. */
   onMove?: (clientId: string, outputId: number) => void
+  /** When provided, each card shows an add-to-gallery action for its
+   *  displayed (first) output. */
+  onAddToGallery?: (clientId: string, outputId: number) => void
 }
 
 export function JobGallery({
@@ -36,6 +39,7 @@ export function JobGallery({
   onSelect,
   onDelete,
   onMove,
+  onAddToGallery,
 }: JobGalleryProps) {
   if (jobs.length === 0) return null
   return (
@@ -67,6 +71,19 @@ export function JobGallery({
                 }}
               >
                 <Icon name="moveToLibrary" size={14} />
+              </button>
+            )}
+            {onAddToGallery && (
+              <button
+                type="button"
+                className="card-move"
+                aria-label="Add this generated image to a gallery"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onAddToGallery(job.client_id, job.outputs[0].id)
+                }}
+              >
+                <Icon name="galleries" size={14} />
               </button>
             )}
             {onDelete && (

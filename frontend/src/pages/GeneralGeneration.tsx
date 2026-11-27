@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState } from 'react'
+import { AddToGalleryDialog } from '../components/AddToGalleryDialog'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { JobGallery } from '../components/JobGallery'
 import { JobResultViewer } from '../components/JobResultViewer'
 import { MoveToLibraryDialog } from '../components/MoveToLibraryDialog'
+import { useAddToGallery } from '../hooks/useAddToGallery'
 import { useMoveToLibrary } from '../hooks/useMoveToLibrary'
 import {
   cancelJob,
@@ -60,6 +62,7 @@ export function GeneralGeneration() {
   }, [])
   const { moveTarget, requestMove, handleMove, closeMove } =
     useMoveToLibrary(upsertJob)
+  const { target: galleryTarget, requestAdd, closeAdd } = useAddToGallery()
 
   const workflow =
     workflows?.find((w) => w.category === 'general_generation' && w.enabled) ??
@@ -421,6 +424,9 @@ export function GeneralGeneration() {
               onMoveOutput={
                 viewerJob.status === 'completed' ? requestMove : undefined
               }
+              onAddToGallery={
+                viewerJob.status === 'completed' ? requestAdd : undefined
+              }
             />
           ) : (
             <div className="gen-empty">
@@ -438,6 +444,7 @@ export function GeneralGeneration() {
                 onSelect={setSelectedClientId}
                 onDelete={requestDelete}
                 onMove={requestMove}
+                onAddToGallery={requestAdd}
               />
             </>
           )}
@@ -445,6 +452,10 @@ export function GeneralGeneration() {
       </div>
 
       {moveTarget && <MoveToLibraryDialog onMove={handleMove} onClose={closeMove} />}
+
+      {galleryTarget && (
+        <AddToGalleryDialog outputId={galleryTarget.outputId} onClose={closeAdd} />
+      )}
 
       {confirmDelete && (
         <ConfirmDialog

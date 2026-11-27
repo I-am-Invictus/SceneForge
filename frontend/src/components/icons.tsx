@@ -7,6 +7,7 @@ const PATHS: Record<string, string> = {
   characters: 'M8 10a3 3 0 100-6 3 3 0 000 6zM3 18c0-2.8 2.2-5 5-5s5 2.2 5 5',
   scenes: 'M4 5h12v10H4zM4 12l4-3 3 2 3-4 2 2.5M8 12l1.5 3',
   star: 'M9 3l2 4.1 4.5.7-3.2 3.2.7 4.5L9 13.5 4.9 15.5l.8-4.5L2.5 7.8 7 7.1z',
+  galleries: 'M3 3h5v5H3zM10 3h5v5h-5zM3 10h5v5H3zM10 10h5v5h-5z',
   history: 'M9 4a5 5 0 11-4.9 6M9 4V1.5M9 4H6.5M9 8v3l2.5 1.5',
   workflows: 'M3 4h4v4H3zM12 12h4v4h-4zM7 6h3a2 2 0 012 2v2M14 14v-2a2 2 0 00-2-2H9',
   settings: 'M9 6.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM9 16.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM2.5 9h3M12.5 9h3M4.5 4.5L6 6M12 12l1.5 1.5M4.5 13.5L6 12M12 6l1.5-1.5',

@@ -387,9 +387,9 @@ async def add_reference(
     asset_id: int,
     incoming: IncomingFile,
 ) -> Asset:
+    # Both scenes and characters support multiple reference images; the
+    # management behavior is intentionally identical across the two kinds.
     asset = get_asset(db, kind, asset_id)
-    if kind != KIND_CHARACTER:
-        raise AssetError(409, "Only characters support multiple references")
     has_default = any(f.is_default for f in asset.files)
     await _store_file(
         db,

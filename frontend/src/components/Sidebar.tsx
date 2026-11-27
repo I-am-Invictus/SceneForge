@@ -23,6 +23,7 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
     items: [
       { to: '/characters', label: 'Characters', icon: 'characters' },
       { to: '/scenes', label: 'Scenes', icon: 'scenes' },
+      { to: '/galleries', label: 'Galleries', icon: 'galleries' },
       { to: '/starred', label: 'Starred Assets', icon: 'star' },
     ],
   },

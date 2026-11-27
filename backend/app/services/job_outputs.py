@@ -15,6 +15,7 @@ from app.models import (
     JobOutput,
 )
 from app.schemas import JobError
+from app.services import galleries as gallery_service
 from app.services import images as image_service
 from app.services.settings import image_settings
 
@@ -83,6 +84,16 @@ def delete_output(db: Session, client_id: str, output_id: int) -> Job:
         )
         if output_refs == 0 and asset_refs == 0:
             removable.append(rel_path)
+
+    # Drop any gallery memberships first (the foreign key also cascades this);
+    # deleting an image must never leave dangling gallery rows.
+    removed = gallery_service.cleanup_output_memberships(db, row.id)
+    if removed:
+        logger.info(
+            "Removed %d gallery membership(s) for deleted output %s",
+            removed,
+            row.id,
+        )
 
     # Commit the DB change first so a storage failure can never leave the
     # database inconsistent with the gallery.

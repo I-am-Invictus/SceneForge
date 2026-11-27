@@ -1,6 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Dialog } from './Dialog'
-import { createAssets, listAssets } from '../services/assets'
+import {
+  addReferences,
+  createAssets,
+  deleteFile,
+  listAssets,
+  setDefaultFile,
+} from '../services/assets'
 import type { Asset, AssetFile, AssetKind } from '../types/assets'
 
 interface SourceImagePickerProps {
@@ -29,6 +35,7 @@ export function SourceImagePicker({
   const [expanded, setExpanded] = useState<number | null>(null)
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const addRefInput = useRef<HTMLInputElement>(null)
 
   const labels = KIND_LABEL[kind]
 
@@ -64,6 +71,49 @@ export function SourceImagePicker({
       const asset = created[0]
       const file = asset.files.find((f) => f.is_default) ?? asset.files[0]
       onSelect(asset, file)
+    } catch (e) {
+      setUploadError((e as Error).message)
+    } finally {
+      setUploading(false)
+    }
+  }
+
+  // Reference management for the expanded asset — the same add / set-default /
+  // remove behavior as the asset detail page, so it can be done here without
+  // leaving the workflow.
+  function replaceAsset(updated: Asset) {
+    setAssets((prev) =>
+      prev ? prev.map((a) => (a.id === updated.id ? updated : a)) : prev,
+    )
+    onAssetsChanged()
+  }
+
+  async function handleSetDefault(fileId: number) {
+    if (!expandedAsset) return
+    setUploadError(null)
+    try {
+      replaceAsset(await setDefaultFile(kind, expandedAsset.id, fileId))
+    } catch (e) {
+      setUploadError((e as Error).message)
+    }
+  }
+
+  async function handleRemoveFile(fileId: number) {
+    if (!expandedAsset) return
+    setUploadError(null)
+    try {
+      replaceAsset(await deleteFile(kind, expandedAsset.id, fileId))
+    } catch (e) {
+      setUploadError((e as Error).message)
+    }
+  }
+
+  async function handleAddReferences(files: FileList) {
+    if (!expandedAsset) return
+    setUploading(true)
+    setUploadError(null)
+    try {
+      replaceAsset(await addReferences(kind, expandedAsset.id, files))
     } catch (e) {
       setUploadError((e as Error).message)
     } finally {
@@ -130,19 +180,71 @@ export function SourceImagePicker({
       {expandedAsset && (
         <div className="picker-files">
           {expandedAsset.files.map((file) => (
-            <button
+            <div
               key={file.id}
-              type="button"
               className="picker-file"
+              role="button"
+              tabIndex={0}
               onClick={() => onSelect(expandedAsset, file)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') onSelect(expandedAsset, file)
+              }}
               title={file.display_name}
             >
               <img src={file.thumbnail_url} alt="" loading="lazy" />
               <span className="picker-file-meta">
                 {file.width}×{file.height}
               </span>
-            </button>
+              {file.is_default && (
+                <span className="picker-file-default">Default</span>
+              )}
+              <span className="picker-file-actions">
+                {!file.is_default && (
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    title="Set as default"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleSetDefault(file.id)
+                    }}
+                  >
+                    ★
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="icon-btn"
+                  title="Remove image"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    void handleRemoveFile(file.id)
+                  }}
+                >
+                  ✕
+                </button>
+              </span>
+            </div>
           ))}
+          <button
+            type="button"
+            className="picker-file-add"
+            onClick={() => addRefInput.current?.click()}
+          >
+            + Add reference
+            <input
+              ref={addRefInput}
+              type="file"
+              accept="image/jpeg,image/png,image/webp,image/gif"
+              multiple
+              hidden
+              disabled={uploading}
+              onChange={(e) => {
+                if (e.target.files?.length) handleAddReferences(e.target.files)
+                e.target.value = ''
+              }}
+            />
+          </button>
         </div>
       )}
     </Dialog>

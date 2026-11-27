@@ -1,5 +1,6 @@
 from app.models.asset import Asset, AssetFile
 from app.models.folder import Folder
+from app.models.gallery import Gallery, GalleryImage
 from app.models.job import Job, JobOutput
 from app.models.setting import Setting
 from app.models.workflow import RegisteredWorkflow
@@ -11,6 +12,8 @@ __all__ = [
     "AssetFile",
     "Job",
     "JobOutput",
+    "Gallery",
+    "GalleryImage",
     "RegisteredWorkflow",
 ]
 

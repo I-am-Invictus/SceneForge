@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { AddToGalleryDialog } from '../components/AddToGalleryDialog'
 import { ConfirmDialog } from '../components/ConfirmDialog'
 import { MoveToLibraryDialog } from '../components/MoveToLibraryDialog'
 import type { CompareImage } from '../components/ImageComparison'
@@ -6,6 +7,7 @@ import { Icon } from '../components/icons'
 import { JobGallery } from '../components/JobGallery'
 import { JobResultViewer } from '../components/JobResultViewer'
 import { SourceImagePicker } from '../components/SourceImagePicker'
+import { useAddToGallery } from '../hooks/useAddToGallery'
 import { useMoveToLibrary } from '../hooks/useMoveToLibrary'
 import { listAssets } from '../services/assets'
 import {
@@ -96,6 +98,7 @@ export function ImageModification() {
   }, [])
   const { moveTarget, requestMove, handleMove, closeMove } =
     useMoveToLibrary(upsertJob)
+  const { target: galleryTarget, requestAdd, closeAdd } = useAddToGallery()
 
   const workflow =
     workflows?.find(
@@ -544,6 +547,9 @@ export function ImageModification() {
               onMoveOutput={
                 viewerJob.status === 'completed' ? requestMove : undefined
               }
+              onAddToGallery={
+                viewerJob.status === 'completed' ? requestAdd : undefined
+              }
             />
           ) : (
             <div className="gen-empty">
@@ -561,6 +567,7 @@ export function ImageModification() {
                 onSelect={setSelectedClientId}
                 onDelete={requestDelete}
                 onMove={requestMove}
+                onAddToGallery={requestAdd}
               />
             </>
           )}
@@ -580,6 +587,10 @@ export function ImageModification() {
       )}
 
       {moveTarget && <MoveToLibraryDialog onMove={handleMove} onClose={closeMove} />}
+
+      {galleryTarget && (
+        <AddToGalleryDialog outputId={galleryTarget.outputId} onClose={closeAdd} />
+      )}
 
       {confirmDelete && (
         <ConfirmDialog

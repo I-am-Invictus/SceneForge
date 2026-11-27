@@ -124,57 +124,53 @@ export function AssetDetailPage({ kind }: { kind: AssetKind }) {
               <span className="reference-meta">
                 {file.width}×{file.height}
               </span>
-              {isCharacter && (
-                <span className="reference-actions">
-                  {!file.is_default && (
-                    <button
-                      className="icon-btn"
-                      title="Set as default"
-                      onClick={() =>
-                        assetsApi
-                          .setDefaultFile(kind, assetId, file.id)
-                          .then(setAsset)
-                      }
-                    >
-                      ★
-                    </button>
-                  )}
+              <span className="reference-actions">
+                {!file.is_default && (
                   <button
                     className="icon-btn"
-                    title="Remove image"
+                    title="Set as default"
                     onClick={() =>
                       assetsApi
-                        .deleteFile(kind, assetId, file.id)
+                        .setDefaultFile(kind, assetId, file.id)
                         .then(setAsset)
                     }
                   >
-                    ✕
+                    ★
                   </button>
-                </span>
-              )}
+                )}
+                <button
+                  className="icon-btn"
+                  title="Remove image"
+                  onClick={() =>
+                    assetsApi
+                      .deleteFile(kind, assetId, file.id)
+                      .then(setAsset)
+                  }
+                >
+                  ✕
+                </button>
+              </span>
             </div>
           </div>
         ))}
 
-        {isCharacter && (
-          <button
-            className="reference-add"
-            onClick={() => addRefInput.current?.click()}
-          >
-            + Add reference
-            <input
-              ref={addRefInput}
-              type="file"
-              accept="image/jpeg,image/png,image/webp,image/gif"
-              multiple
-              hidden
-              onChange={(e) => {
-                if (e.target.files?.length) addReferences(e.target.files)
-                e.target.value = ''
-              }}
-            />
-          </button>
-        )}
+        <button
+          className="reference-add"
+          onClick={() => addRefInput.current?.click()}
+        >
+          + Add reference
+          <input
+            ref={addRefInput}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            multiple
+            hidden
+            onChange={(e) => {
+              if (e.target.files?.length) addReferences(e.target.files)
+              e.target.value = ''
+            }}
+          />
+        </button>
       </div>
 
       {dialog === 'edit' && (

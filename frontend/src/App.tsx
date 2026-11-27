@@ -6,6 +6,8 @@ import { CharacterSwap } from './pages/CharacterSwap'
 import { Characters } from './pages/Characters'
 import { Scenes } from './pages/Scenes'
 import { Starred } from './pages/Starred'
+import { Gallery } from './pages/Gallery'
+import { GalleryDetail } from './pages/GalleryDetail'
 import { History } from './pages/History'
 import { Workflows } from './pages/Workflows'
 import { SettingsPage } from './pages/SettingsPage'
@@ -33,6 +35,8 @@ export default function App() {
               element={<AssetDetailPage kind="scene" />}
             />
             <Route path="/starred" element={<Starred />} />
+            <Route path="/galleries" element={<Gallery />} />
+            <Route path="/galleries/:id" element={<GalleryDetail />} />
             <Route path="/history" element={<History />} />
             <Route path="/workflows" element={<Workflows />} />
             <Route path="/settings" element={<SettingsPage />} />
