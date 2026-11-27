@@ -287,6 +287,32 @@ def test_validate_splits_errors_and_warnings():
     assert not any("ghost_lora" in e for e in errors)
 
 
+def test_validate_image_input_to_combo_filepicker_is_valid():
+    # LoadImage.image is a combo (filename dropdown); an "image" input maps
+    # there by writing the uploaded filename. Must NOT be flagged.
+    spec = _spec_with_outputs()
+    spec.inputs["source_image"] = InputMapping(
+        name="source_image", node_id="1", input_name="image", type="image", required=True
+    )
+    spec.outputs["images"] = [OutputMapping(name="images", node_id="2")]
+    template = {
+        "1": {"class_type": "LoadImage", "inputs": {"image": "a.png"}},
+        "2": {"class_type": "SaveImage", "inputs": {}},
+    }
+    object_info = {
+        "LoadImage": {
+            "input": {"required": {"image": [["a.png"]]}, "optional": {}},
+            "output": ["IMAGE"],
+        },
+        "SaveImage": {
+            "input": {"required": {"images": [["IMAGE"]]}, "optional": {}},
+            "output": ["IMAGE"],
+        },
+    }
+    errors, _ = validate_workflow(spec, template, object_info)
+    assert errors == []
+
+
 def test_validate_no_output_mapping_is_error():
     spec = _spec_with_outputs()
     spec.inputs["prompt"] = InputMapping(

@@ -65,7 +65,10 @@ def _type_compatibility(spec: WorkflowSpec, template: dict, object_info: dict) -
         if field_def is None:
             continue  # unknown field already reported by invalid_mappings
         if _is_combo(field_def):
-            if mapping.type != "combo":
+            # A combo is a dropdown. "combo" selects an option; "image" sets a
+            # filename into a file-picker combo (e.g. LoadImage.image) — both
+            # write a string, so both are valid for combo fields.
+            if mapping.type not in {"combo", "image"}:
                 issues.append(
                     f"input '{name}': {node['class_type']}.{mapping.input_name} is a "
                     f"combo, but the mapping type is '{mapping.type}'"
