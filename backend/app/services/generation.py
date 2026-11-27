@@ -2,7 +2,6 @@ import asyncio
 import hashlib
 import json
 import uuid
-from functools import lru_cache
 from pathlib import Path
 
 from sqlalchemy import select
@@ -25,25 +24,25 @@ from app.services.settings import get_effective_settings, image_settings
 from app.models.setting import utcnow
 
 
-@lru_cache
 def get_specs() -> tuple[WorkflowSpec, ...]:
+    # Deliberately uncached: the workflow set is tiny and reads from disk are
+    # cheap, and a cache goes stale the moment a workflow/version/mapping is
+    # added or changed (uploads, renames, activation). Always fresh.
     return tuple(discover_specs())
 
 
-def clear_spec_cache() -> None:
-    get_specs.cache_clear()
+def clear_spec_cache() -> None:  # kept for backwards compatibility; no-op now
+    return None
 
 
 def get_spec(workflow_id: str, version: int | None = None) -> WorkflowSpec:
-    if version is not None:
-        try:
-            return registry.get_spec(workflow_id, version)
-        except ValueError as exc:
-            raise JobError(404, str(exc))
-    for spec in get_specs():
-        if spec.id == workflow_id:
-            return spec
-    raise JobError(404, f"Unknown workflow: {workflow_id}")
+    # Always read from disk (never the cached active set) so freshly uploaded
+    # workflows and newly switched active versions are visible immediately, and
+    # a specific version can be requested. ``version=None`` means active.
+    try:
+        return registry.get_spec(workflow_id, version)
+    except ValueError as exc:
+        raise JobError(404, str(exc))
 
 
 def sync_registry(db: Session) -> None:
@@ -99,8 +98,9 @@ async def submit_generation(
     workflow_id: str,
     values: dict,
     ignore_enabled: bool = False,
+    version: int | None = None,
 ) -> Job:
-    spec = get_spec(workflow_id)
+    spec = get_spec(workflow_id, version)
     sync_registry(db)
     row = db.get(RegisteredWorkflow, workflow_id)
     if not ignore_enabled and (row is None or not row.enabled):
@@ -334,7 +334,7 @@ async def test_workflow(
 
     try:
         job = await submit_generation(
-            db, workflow_id, test_inputs or {}, ignore_enabled=True
+            db, workflow_id, test_inputs or {}, ignore_enabled=True, version=version
         )
     except JobError as exc:
         result["issues"].append(f"test submission failed: {exc.message}")

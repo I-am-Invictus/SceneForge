@@ -488,6 +488,57 @@ def test_test_endpoint_reports_missing_required_input(monkeypatch):
     assert any("Missing required input" in i for i in body["issues"])
 
 
+def test_test_endpoint_works_for_freshly_uploaded_workflow(monkeypatch):
+    # Regression: submit_generation resolves the active spec from disk. A
+    # workflow uploaded in the same session must be submit-able, not a stale
+    # "Unknown workflow" from a cached spec set.
+    monkeypatch.setattr(
+        comfyui_client,
+        "get_status",
+        AsyncMock(return_value=ComfyuiStatus(connected=True, version="0.46.0")),
+    )
+    monkeypatch.setattr(comfyui_client, "object_info", AsyncMock(return_value={}))
+    monkeypatch.setattr(
+        generation, "validate_workflow", lambda spec, template, oi: ([], [])
+    )
+    monkeypatch.setattr(
+        comfyui_client, "submit_prompt", AsyncMock(return_value="prompt-fresh")
+    )
+    workflow = {
+        "1": {"class_type": "TextNode", "inputs": {"text": "x"}},
+        "2": {"class_type": "SaveImage", "inputs": {"images": ["1", 0]}},
+    }
+    with client:
+        up = client.post(
+            "/api/workflows",
+            json={
+                "id": "wf_fresh_submit",
+                "name": "Fresh",
+                "category": "general_generation",
+                "workflow": workflow,
+                "inputs": {
+                    "prompt": {
+                        "node_id": "1",
+                        "input_name": "text",
+                        "type": "text",
+                        "required": True,
+                    }
+                },
+                "outputs": {"result": [{"node_id": "2", "output_type": "images"}]},
+            },
+        )
+        assert up.status_code == 201, up.text
+        response = client.post(
+            "/api/workflows/wf_fresh_submit/test",
+            json={"test_inputs": {"prompt": "hello"}},
+        )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["submitted"] is True, body
+    assert body["job_client_id"]
+    assert not any("Unknown workflow" in i for i in body["issues"])
+
+
 # --- Disable gating ----------------------------------------------------------
 
 
