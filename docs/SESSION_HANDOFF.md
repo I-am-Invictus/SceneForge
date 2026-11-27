@@ -45,6 +45,7 @@ ComfyUI directly; everything goes through the backend over localhost.
 - **Phase 5 (image modification UI) + generated-image deletion + move-to-library:** DONE, verified live (mode-aware source picker over Characters/Scenes, upload, before/after comparison with real sources, output deletion, move results into either library, live ComfyUI jobs). See "Phase 5 implementation" below.
 - **Asset management (edit metadata + reference-safe delete) for Scenes/Characters:** DONE, verified live. See "Asset management" below.
 - **Phase 6 (character swap UI):** DONE, verified live. See "Phase 6 implementation" below.
+- **Gallery Collections + gallery image viewer + reference-management generalization:** DONE, verified live (backend 80 tests + production smoke/acceptance). See "Gallery Collections (this session)" below.
 - Phase 7/8: workflow management UI, unified generation history (placeholder pages exist).
 
 ## STANDING REQUIREMENT — Gallery before/after comparison (Phases 4–6)
@@ -282,6 +283,83 @@ outputs: images→18 (SaveImage). The workflow itself resizes the scene to ~2 MP
 (node 16:40) and the character to ~0.59 MP (node 16:41); the model is selected
 by `swap_mode` (body LoRA node 10 vs head LoRA node 11) via `ComfySwitchNode`
 16:43.
+
+## Gallery Collections (this session)
+
+Explicit, user-named collections of **generated** images, separate from the
+asset libraries and from Starred. An image is a `JobOutput`; a gallery never
+copies or owns image bytes — membership is a pure DB relationship, so the same
+image can sit in several galleries at once.
+
+**Data model** (`backend/app/models/gallery.py`): `galleries` (id, name,
+created_at, updated_at) + `gallery_images` (id, `gallery_id` FK→galleries
+CASCADE, `job_output_id` FK→job_outputs CASCADE, added_at,
+`UniqueConstraint(gallery_id, job_output_id)`). Both FKs cascade (and
+`PRAGMA foreign_keys=ON` is on every connection), so deleting a gallery or an
+output removes its memberships automatically. New tables are created by
+`init_db()` (`create_all`) on the next service start — no `ALTER` migration
+needed.
+
+**API** (`backend/app/api/galleries.py`, registered in `main.py`):
+`GET/POST /api/galleries`, `GET/PATCH/DELETE /api/galleries/{id}`,
+`GET /api/galleries/{id}/images`, `DELETE /api/galleries/{id}/images/{output_id}`,
+`GET /api/job-outputs/{output_id}/galleries`,
+`PUT /api/job-outputs/{output_id}/galleries` (syncs the **exact** set of
+galleries an image belongs to — idempotent, unknown ids ignored). The list/get
+responses compute `image_count` + a `cover` (most-recent member's thumbnail)
+server-side. `delete_output` also calls
+`gallery_service.cleanup_output_memberships` explicitly (pragma-independent
+guarantee on top of the FK cascade).
+
+**Original resolution** (`gallery_service.resolve_original`): for a gallery
+image, the before/after "original" is resolved by job category —
+`image_modification`→`inputs.source_image`, `character_swap`→`inputs.scene_image`,
+`general_generation`→none. Returns the asset's `/media/assets/{id}` url (and
+degrades to `null` if the source no longer exists), so the gallery viewer shows
+the same before/after the job pages do.
+
+**Frontend:**
+- `types/galleries.ts`, `services/galleries.ts` (standard `request` pattern).
+- `AddToGalleryDialog` + `hooks/useAddToGallery`: lists galleries, toggles
+  membership, creates a new gallery inline, then `PUT` syncs. Wired into
+  `JobResultViewer` (new `onAddToGallery` prop) and `JobGallery` (new
+  `onAddToGallery` card action) and all three pages
+  (GeneralGeneration / ImageModification / CharacterSwap) — same wiring shape as
+  the existing `useMoveToLibrary`.
+- `pages/Gallery.tsx` (`/galleries`): grid of gallery cards (cover + name +
+  count) + create. `pages/GalleryDetail.tsx` (`/galleries/:id`): rename (inline),
+  delete-gallery, per-image **Add to library / Add to gallery / Remove from
+  this gallery / Delete image**, and a grid of thumbnails.
+- `components/GalleryImageViewer.tsx`: a focused overlay that **reuses
+  `ImageComparison`** — one instance stays mounted while `index` changes, which
+  is what keeps the user's selected comparison mode across images. Prev/next +
+  filmstrip + keyboard (Arrow/Esc) navigation, with the key handler guarded so
+  it never fights the compare-slider grip (`[role="slider"]`) or text fields.
+- `Sidebar`: "Galleries" link in the Library section; new `galleries` icon
+  (2×2 grid) in `icons.tsx`. Routes in `App.tsx`.
+
+**Reference management generalization (Feature 3):** `services/assets.py
+add_reference` no longer restricts multi-reference to characters — scenes and
+characters now behave identically (add / set-default / remove). The per-file
+set-default/remove actions and the "Add reference" button in
+`AssetDetailPage` are no longer gated on `isCharacter`; `SourceImagePicker`
+gains the same inline management (set-default/remove per file + "Add reference"
+for the expanded asset) so it can be done without leaving the workflow. Scenes
+still work (verified: a 2nd reference to a scene now returns 201, previously
+409; single-file scenes unaffected).
+
+**Tests / verification:** `backend/tests/test_galleries.py` (11 tests: CRUD,
+get-by-id, multi-membership, idempotent dedup, remove-from-one, delete-gallery
+keeps images, delete-output cleans memberships, membership persists in DB,
+original resolution for mod vs gen). Backend **80 pytest green**; `tsc && vite
+build` clean. Live on thor128-2 after `sudo systemctl restart sceneforge`:
+service active on :8080, both tables created, 23-check gallery acceptance
+(create/list/get/delete, multi-membership, dedup, remove-from-one, original
+resolution gen→null / mod→resolved+media-200, delete-gallery-keeps-outputs) all
+PASS, plus a scene multi-reference check (201). Regression: `/api/health` +
+`/api/comfyui/status` 200 (ComfyUI connected v0.46.0); workflows/jobs/libraries
+200. All live-test galleries/outputs/assets were cleaned up (nothing left
+behind this session).
 
 ## Stage 1–5 regression gate (this session)
 
