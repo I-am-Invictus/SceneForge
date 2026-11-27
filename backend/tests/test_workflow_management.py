@@ -383,6 +383,27 @@ def test_inspect_endpoint_returns_report():
 # --- Test endpoint (real inference submission) -------------------------------
 
 
+def test_validate_endpoint_ok_shape(monkeypatch):
+    # Exercises validate_version end-to-end (load_template path). With an empty
+    # object_info every node class is "missing" -> errors, but the endpoint must
+    # still return 200 (this guards against a 500 from a bad template access).
+    monkeypatch.setattr(
+        comfyui_client,
+        "get_status",
+        AsyncMock(return_value=ComfyuiStatus(connected=True, version="0.46.0")),
+    )
+    monkeypatch.setattr(comfyui_client, "object_info", AsyncMock(return_value={}))
+    with client:
+        response = client.post(
+            "/api/workflows/qwen_image_gen_v1/versions/1/validate"
+        )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["ok"] is False
+    assert body["errors"]
+    assert body["connectivity"]["connected"] is True
+
+
 def test_test_endpoint_submits_real_job(monkeypatch):
     monkeypatch.setattr(
         comfyui_client,

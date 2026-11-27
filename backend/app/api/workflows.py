@@ -269,7 +269,7 @@ async def validate_version(
         "version": status.version,
         "detail": status.detail,
     }
-    object_info = _object_info(base_url, max_age=0)
+    object_info = await _object_info(base_url, max_age=0)
     if object_info is None:
         return {
             "id": workflow_id,
@@ -279,7 +279,7 @@ async def validate_version(
             "errors": ["could not fetch ComfyUI node information"],
             "warnings": [],
         }
-    errors, warnings = validate_workflow(spec, spec.template, object_info)
+    errors, warnings = validate_workflow(spec, load_template(spec), object_info)
     return {
         "id": workflow_id,
         "version": version,
