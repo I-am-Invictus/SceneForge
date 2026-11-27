@@ -57,3 +57,15 @@ export function deleteJobOutput(
     method: 'DELETE',
   })
 }
+
+export function moveJobOutput(
+  clientId: string,
+  outputId: number,
+  folder: 'character' | 'scene',
+): Promise<Job> {
+  return request<Job>(`/api/jobs/${clientId}/outputs/${outputId}/move`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ folder }),
+  })
+}

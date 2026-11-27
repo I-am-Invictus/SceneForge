@@ -25,6 +25,9 @@ interface JobGalleryProps {
   /** When provided, each card shows a delete action for its displayed
    *  (first) output. The parent handles confirmation. */
   onDelete?: (clientId: string, outputId: number) => void
+  /** When provided, each card shows a move-to-library action for its
+   *  displayed (first) output. */
+  onMove?: (clientId: string, outputId: number) => void
 }
 
 export function JobGallery({
@@ -32,6 +35,7 @@ export function JobGallery({
   selectedClientId,
   onSelect,
   onDelete,
+  onMove,
 }: JobGalleryProps) {
   if (jobs.length === 0) return null
   return (
@@ -52,6 +56,19 @@ export function JobGallery({
         >
           <div className="job-gallery-thumb">
             <img src={job.outputs[0].thumbnail_url} alt="" loading="lazy" />
+            {onMove && (
+              <button
+                type="button"
+                className="card-move"
+                aria-label="Move this generated image to a library"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onMove(job.client_id, job.outputs[0].id)
+                }}
+              >
+                <Icon name="moveToLibrary" size={14} />
+              </button>
+            )}
             {onDelete && (
               <button
                 type="button"

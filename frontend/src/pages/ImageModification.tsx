@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { ConfirmDialog } from '../components/ConfirmDialog'
+import { MoveToLibraryDialog } from '../components/MoveToLibraryDialog'
 import type { CompareImage } from '../components/ImageComparison'
 import { Icon } from '../components/icons'
 import { JobGallery } from '../components/JobGallery'
@@ -13,9 +14,10 @@ import {
   getJob,
   listJobs,
   listWorkflows,
+  moveJobOutput,
 } from '../services/jobs'
 import { TERMINAL_STATUSES, type Job, type Workflow } from '../types/jobs'
-import type { Asset, AssetFile } from '../types/assets'
+import type { Asset, AssetFile, AssetKind } from '../types/assets'
 
 interface SourceSelection {
   asset: Asset
@@ -59,7 +61,9 @@ export function ImageModification() {
   const [activeJobs, setActiveJobs] = useState<Job[]>([])
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
-  const [sceneFiles, setSceneFiles] = useState<Map<number, AssetFile>>(
+  // Source images can come from either library (scenes for scene edits,
+  // characters for character edits), so the original map spans both.
+  const [sourceFiles, setSourceFiles] = useState<Map<number, AssetFile>>(
     new Map(),
   )
 
@@ -83,21 +87,26 @@ export function ImageModification() {
     clientId: string
     outputId: number
   } | null>(null)
+  const [moveTarget, setMoveTarget] = useState<{
+    clientId: string
+    outputId: number
+  } | null>(null)
 
   const workflow =
     workflows?.find(
       (w) => w.category === 'image_modification' && w.enabled,
     ) ?? null
 
-  const refreshSceneFiles = useCallback(() => {
-    listAssets('scene')
-      .then((assets) => {
+  const refreshSourceFiles = useCallback(() => {
+    Promise.all([listAssets('scene'), listAssets('character')])
+      .then(([scenes, characters]) => {
         const map = new Map<number, AssetFile>()
-        for (const a of assets) for (const f of a.files) map.set(f.id, f)
-        setSceneFiles(map)
+        for (const a of [...scenes, ...characters])
+          for (const f of a.files) map.set(f.id, f)
+        setSourceFiles(map)
       })
       .catch(() => {
-        // Comparison degrades to generated-only if scenes can't be listed.
+        // Comparison degrades to generated-only if assets can't be listed.
       })
   }, [])
 
@@ -119,11 +128,11 @@ export function ImageModification() {
         if (!cancelled) setLoadError((e as Error).message)
       }
     })()
-    refreshSceneFiles()
+    refreshSourceFiles()
     return () => {
       cancelled = true
     }
-  }, [refreshSceneFiles])
+  }, [refreshSourceFiles])
 
   useEffect(() => {
     if (activeJobs.length === 0) return
@@ -161,7 +170,7 @@ export function ImageModification() {
     const src = job.inputs.source_image
     if (!src || typeof src !== 'object') return null
     const ref = src as { asset_file_id?: number }
-    const file = sceneFiles.get(ref.asset_file_id ?? -1)
+    const file = sourceFiles.get(ref.asset_file_id ?? -1)
     if (!file) return null
     return {
       src: file.original_url,
@@ -249,6 +258,13 @@ export function ImageModification() {
     if (!confirmDelete) return
     const { clientId, outputId } = confirmDelete
     const fresh = await deleteJobOutput(clientId, outputId)
+    setJobs((prev) => [fresh, ...prev.filter((j) => j.client_id !== clientId)])
+  }
+
+  async function handleMoveConfirmed(folder: AssetKind) {
+    if (!moveTarget) return
+    const { clientId, outputId } = moveTarget
+    const fresh = await moveJobOutput(clientId, outputId, folder)
     setJobs((prev) => [fresh, ...prev.filter((j) => j.client_id !== clientId)])
   }
 
@@ -530,6 +546,12 @@ export function ImageModification() {
               onDeleteOutput={
                 viewerJob.status === 'completed' ? requestDelete : undefined
               }
+              onMoveOutput={
+                viewerJob.status === 'completed'
+                  ? (clientId, outputId) =>
+                      setMoveTarget({ clientId, outputId })
+                  : undefined
+              }
             />
           ) : (
             <div className="gen-empty">
@@ -546,6 +568,9 @@ export function ImageModification() {
                 selectedClientId={viewerJob?.client_id}
                 onSelect={setSelectedClientId}
                 onDelete={requestDelete}
+                onMove={(clientId, outputId) =>
+                  setMoveTarget({ clientId, outputId })
+                }
               />
             </>
           )}
@@ -559,7 +584,15 @@ export function ImageModification() {
             setSource({ asset, file })
             setPickerOpen(false)
           }}
-          onAssetsChanged={refreshSceneFiles}
+          kind={mode}
+          onAssetsChanged={refreshSourceFiles}
+        />
+      )}
+
+      {moveTarget && (
+        <MoveToLibraryDialog
+          onMove={(folder) => handleMoveConfirmed(folder)}
+          onClose={() => setMoveTarget(null)}
         />
       )}
 

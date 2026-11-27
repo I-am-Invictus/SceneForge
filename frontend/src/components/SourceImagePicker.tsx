@@ -1,18 +1,27 @@
 import { useEffect, useState } from 'react'
 import { Dialog } from './Dialog'
 import { createAssets, listAssets } from '../services/assets'
-import type { Asset, AssetFile } from '../types/assets'
+import type { Asset, AssetFile, AssetKind } from '../types/assets'
 
 interface SourceImagePickerProps {
   onClose: () => void
   onSelect: (asset: Asset, file: AssetFile) => void
-  /** Called after an upload so the parent can refresh its scene list. */
+  /** The library shown for selection (and the upload destination):
+   *  'character' when editing a character, 'scene' when editing a scene. */
+  kind: AssetKind
+  /** Called after an upload so the parent can refresh its asset lists. */
   onAssetsChanged: () => void
+}
+
+const KIND_LABEL: Record<AssetKind, { plural: string; noun: string }> = {
+  character: { plural: 'Characters', noun: 'character' },
+  scene: { plural: 'Scenes', noun: 'scene' },
 }
 
 export function SourceImagePicker({
   onClose,
   onSelect,
+  kind,
   onAssetsChanged,
 }: SourceImagePickerProps) {
   const [assets, setAssets] = useState<Asset[] | null>(null)
@@ -21,9 +30,14 @@ export function SourceImagePicker({
   const [uploading, setUploading] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
 
+  const labels = KIND_LABEL[kind]
+
   useEffect(() => {
     let cancelled = false
-    listAssets('scene')
+    setAssets(null)
+    setError(null)
+    setExpanded(null)
+    listAssets(kind)
       .then((list) => {
         if (!cancelled) setAssets(list)
       })
@@ -33,7 +47,7 @@ export function SourceImagePicker({
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [kind])
 
   const expandedAsset = assets?.find((a) => a.id === expanded) ?? null
 
@@ -42,8 +56,10 @@ export function SourceImagePicker({
     setUploading(true)
     setUploadError(null)
     try {
-      const name = files[0].name.replace(/\.[^.]+$/, '') || 'Scene'
-      const created = await createAssets('scene', [files[0]], name)
+      const name =
+        files[0].name.replace(/\.[^.]+$/, '') ||
+        (kind === 'character' ? 'Character' : 'Scene')
+      const created = await createAssets(kind, [files[0]], name)
       onAssetsChanged()
       const asset = created[0]
       const file = asset.files.find((f) => f.is_default) ?? asset.files[0]
@@ -58,7 +74,9 @@ export function SourceImagePicker({
   return (
     <Dialog title="Select source image" onClose={onClose} wide>
       <label className="file-drop">
-        {uploading ? 'Uploading…' : 'Upload an image to the Scenes library'}
+        {uploading
+          ? 'Uploading…'
+          : `Upload an image to the ${labels.plural} library`}
         <input
           type="file"
           accept="image/*"
@@ -72,13 +90,16 @@ export function SourceImagePicker({
       </label>
       {uploadError && <p className="form-error">{uploadError}</p>}
 
-      <div className="picker-divider">or choose from Scenes</div>
+      <div className="picker-divider">or choose from {labels.plural}</div>
 
       {error && <p className="form-error">{error}</p>}
-      {!assets && !error && <div className="empty-note">Loading scenes…</div>}
+      {!assets && !error && (
+        <div className="empty-note">Loading {labels.plural.toLowerCase()}…</div>
+      )}
       {assets && assets.length === 0 && !error && (
         <div className="empty-note">
-          No scenes yet — upload an image above to create one.
+          No {labels.plural.toLowerCase()} yet — upload an image above to
+          create one.
         </div>
       )}
       {assets && assets.length > 0 && (

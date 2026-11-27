@@ -6,7 +6,12 @@ from sqlalchemy.orm import Session
 from app.database.db import get_db
 from app.models import Job, JobOutput
 from app.schemas import JobError
-from app.schemas.jobs import GenerateRequest, JobOut, JobOutputOut
+from app.schemas.jobs import (
+    GenerateRequest,
+    JobOut,
+    JobOutputMove,
+    JobOutputOut,
+)
 from app.services import generation, job_outputs
 from app.services.monitor import job_monitor
 
@@ -91,6 +96,25 @@ async def delete_output(
 ):
     try:
         job = job_outputs.delete_output(db, client_id, output_id)
+    except JobError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+    db.refresh(job)
+    return _serialize(job)
+
+
+@router.post(
+    "/api/jobs/{client_id}/outputs/{output_id}/move", response_model=JobOut
+)
+async def move_output(
+    client_id: str,
+    output_id: int,
+    payload: JobOutputMove,
+    db: Session = Depends(get_db),
+):
+    try:
+        job = job_outputs.move_output_to_library(
+            db, client_id, output_id, payload.folder
+        )
     except JobError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
     db.refresh(job)

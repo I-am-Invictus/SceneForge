@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -65,3 +66,7 @@ class JobOut(BaseModel):
 
 class GenerateRequest(BaseModel):
     inputs: dict = {}
+
+
+class JobOutputMove(BaseModel):
+    folder: Literal["character", "scene"]

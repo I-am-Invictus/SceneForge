@@ -60,6 +60,9 @@ interface JobResultViewerProps {
   /** When provided, shows a delete action for the currently displayed
    *  output. The parent is responsible for confirmation. */
   onDeleteOutput?: (clientId: string, outputId: number) => void
+  /** When provided, shows a move-to-library action for the currently
+   *  displayed output. */
+  onMoveOutput?: (clientId: string, outputId: number) => void
 }
 
 export function JobResultViewer({
@@ -71,6 +74,7 @@ export function JobResultViewer({
   canNext,
   onCancel,
   onDeleteOutput,
+  onMoveOutput,
 }: JobResultViewerProps) {
   const [outputIndex, setOutputIndex] = useState(0)
   useEffect(() => {
@@ -164,6 +168,16 @@ export function JobResultViewer({
           <span className="output-count">
             Result {outputIndex + 1} of {job.outputs.length}
           </span>
+        )}
+        {onMoveOutput && (
+          <button
+            type="button"
+            className="btn secondary job-delete-btn"
+            onClick={() => onMoveOutput(job.client_id, output.id)}
+          >
+            <Icon name="moveToLibrary" size={14} />
+            Move to library
+          </button>
         )}
         {onDeleteOutput && (
           <button

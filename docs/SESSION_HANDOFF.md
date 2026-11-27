@@ -41,8 +41,9 @@ ComfyUI directly; everything goes through the backend over localhost.
 - **Phase 2 (asset library):** DONE, verified in production (characters/scenes, folders, refs, favorites, thumbnails).
 - **Phase 3 (ComfyUI integration):** DONE, verified live. Registry (`app/comfyui/registry.py`), adapter, jobs + WS monitor (`app/services/monitor.py`), output retrieval, `POST /api/generate/{id}`, `GET /api/jobs[/{id}]`, cancel, media endpoints. 42 backend tests.
   - Critical monitor facts: one stable `comfyui_client.monitor_client_id` is used both as the WS `clientId` **and** the prompt `client_id` (ComfyUI routes `execution_start/success/error` to the submitting client_id, not broadcast). Periodic resync (8s) + 30s lost-grace as safety net. `/queue` items are `[number, prompt_id, ...]` under keys `queue_running`/`queue_pending`.
-- **Phase 4 (general generation UI):** IN PROGRESS — see below.
-- **Phase 5 (image modification UI), Phase 6 (character swap UI):** NOT STARTED. Blocked on Phase 4.
+- **Phase 4 (general generation UI):** DONE, verified live (form, live progress, cancel, results gallery, generated-only comparison).
+- **Phase 5 (image modification UI) + generated-image deletion:** DONE, verified live (source picker/upload, Scene/Character editing modes, before/after comparison with real sources, output deletion, live ComfyUI jobs). See "Phase 5 implementation" below.
+- **Phase 6 (character swap UI):** NOT STARTED.
 - Phase 7/8: workflow management UI, unified generation history (placeholder pages exist).
 
 ## STANDING REQUIREMENT — Gallery before/after comparison (Phases 4–6)
@@ -77,14 +78,60 @@ Implementation in Phase 4: `frontend/src/components/ImageComparison.tsx`
 `JobResultViewer`/`JobGallery` wrap it for job-based galleries; Phases 5/6
 pass a resolved `original` (asset file media URL) and reuse them unchanged.
 
-## Phase 4 scope (current authorization)
+## Phase 5 implementation (current state)
 
-- General Generation page (`/generate`) only: prompt/negative/size presets/
-  seed/steps/cfg form → `POST /api/generate/qwen_image_gen_v1`, live progress
-  via `GET /api/jobs/{client_id}` polling, cancel, results gallery with the
-  comparison component (generated-only mode for now).
-- Do NOT build Phase 5/6 forms. Keep `/modify` and `/swap` as placeholders.
-- Stop after Phase 4 and await approval.
+**Image Modification (`/modify`, `frontend/src/pages/ImageModification.tsx`)**
+uses `qwen_image_edit_v1` (category `image_modification`) — a faithful copy of
+`comfy_ui_workflows_ref/api_imageEditWorkflow.json` + added SaveImage node `30`
+(verified node-for-node against the reference; executed ComfyUI prompts contain
+the edit workflow's node set: `TextEncodeQwenImageEditPlus` ×2, `LoadImage`,
+`KSampler`/`sa_solver`, `VAEDecode`, `SaveImage`). It is NOT the general
+generation workflow.
+
+- **Editing modes (UI only):** Scene and Character chips above the prompt.
+  The workflow is a single instruction-based editor, so the mode only changes
+  the prompt label/placeholder/guidance text — it is not a workflow input and
+  is not sent to the backend (do not invent controls for it).
+- **Source selection** (`SourceImagePicker.tsx`): upload a new image (stored in
+  the Scenes library, Phase 2 APIs) or pick an existing scene file. Source is
+  referenced by `asset_file_id` and never modified.
+- **Form inputs:** source, prompt, negative_prompt, size (auto = match source
+  via `auto: "source"`, or custom ×8-rounded W/H), batch_size 1–8, denoise
+  0–1, steps, seed (random/fixed).
+- **Original resolution for comparison:** `job.inputs.source_image.asset_file_id`
+  → scene file map → `/media/assets/{id}` passed as `original` to
+  `JobResultViewer` → `ImageComparison`. Missing source (deleted asset or
+  failed load) degrades to generated-only without breaking the gallery.
+- **Multiple outputs:** `batch_size > 1` yields multiple images on node 30 →
+  output picker + "Result i of n" label + prev/next; all against the same
+  original.
+- **Output capture fix:** `generation.retrieve_outputs` now only stores outputs
+  for nodes the workflow spec declares (image edit: node 30 only) — previously
+  the `PreviewImage` node 6 was stored as a duplicate result.
+- **Generated-image deletion:** `DELETE /api/jobs/{client_id}/outputs/{output_id}`
+  → `app/services/job_outputs.py`. Safety: path must resolve inside
+  `/var/lib/sceneforge` (else 400); file removed only if no other `JobOutput`
+  references it; DB row committed before file unlink (storage failure can't
+  corrupt the DB); missing files tolerated. UI: trash on gallery cards +
+  "Delete image" in the viewer, both behind `ConfirmDialog`; state updates
+  immediately from the returned `JobOut`. Source assets and sibling outputs are
+  never touched.
+
+**Workflow input/output mapping (`qwen_image_edit_v1`):**
+source_image→8(image), prompt→3(prompt), negative_prompt→4(prompt),
+width/height→9 (auto: source), batch_size→9, seed/steps/denoise→2;
+outputs: images→30 (SaveImage, `filename_prefix: sceneforge_edit`).
+
+**Live verification actually executed (thor128-2, ComfyUI 0.46.0):**
+- Real Scene-edit job and Character-edit job: both completed (~18s), 1 output
+  each (node 30, 872×872); executed prompt node-sets confirmed = image-edit
+  workflow; full/thumbnail/source media all 200.
+- Deletion: 200 then 404 on repeat; deleted media 404; sibling output and
+  source asset file (on disk + `/media/assets/2`) intact.
+- Phase 4 regression: new general-generation job completed with output.
+- Backend: 49 pytest tests executed green. Frontend: `tsc && vite build` clean.
+- Browser-side visuals (mode chips, slider drag, confirm dialog) were
+  deployed but confirmed by the user in-browser only if reported.
 
 ## Conventions
 
