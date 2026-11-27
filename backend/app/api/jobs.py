@@ -15,6 +15,7 @@ from app.schemas.jobs import (
 from app.services import generation, job_outputs
 from app.services.images import media_token
 from app.services.monitor import job_monitor
+from app.services.reset import ResetInProgress, writer_guard
 
 router = APIRouter(tags=["jobs"])
 
@@ -62,8 +63,11 @@ async def generate(
     workflow_id: str, payload: GenerateRequest, db: Session = Depends(get_db)
 ):
     try:
-        job = await generation.submit_generation(db, workflow_id, payload.inputs)
+        with writer_guard():
+            job = await generation.submit_generation(db, workflow_id, payload.inputs)
         return _serialize(job)
+    except ResetInProgress as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     except JobError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
 

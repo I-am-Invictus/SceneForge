@@ -1,7 +1,8 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { NavLink } from 'react-router-dom'
 import { Icon, type IconName } from './icons'
 import { ComfyuiBadge } from './ComfyuiBadge'
+import { getDeveloperStatus } from '../services/developer'
 
 interface NavItem {
   to: string
@@ -39,6 +40,13 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
 
 export function Sidebar() {
   const [open, setOpen] = useState(false)
+  const [devMode, setDevMode] = useState(false)
+
+  useEffect(() => {
+    getDeveloperStatus()
+      .then((s) => setDevMode(s.dev_mode))
+      .catch(() => setDevMode(false))
+  }, [])
 
   return (
     <>
@@ -78,6 +86,23 @@ export function Sidebar() {
               ))}
             </div>
           ))}
+          {devMode && (
+            <div className="nav-section nav-section--dev">
+              <div className="nav-section-title nav-section-title--dev">
+                Developer
+              </div>
+              <NavLink
+                to="/developer"
+                className={({ isActive }) =>
+                  `nav-link nav-link--dev ${isActive ? 'active' : ''}`
+                }
+                onClick={() => setOpen(false)}
+              >
+                <Icon name="developer" />
+                <span>Developer Options</span>
+              </NavLink>
+            </div>
+          )}
         </nav>
 
         <div className="sidebar-footer">

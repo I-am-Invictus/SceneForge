@@ -12,6 +12,7 @@ from app.database.db import SessionLocal
 from app.models import Job
 from app.models.setting import utcnow
 from app.services import generation
+from app.services import reset as reset_service
 from app.services.settings import get_effective_settings
 
 RECONNECT_DELAY = 2.0
@@ -134,6 +135,10 @@ class JobMonitor:
         db.commit()
 
     async def _complete(self, db: Session, job: Job) -> None:
+        # A reset is wiping all data; don't recreate job outputs mid-reset.
+        # The job row is removed by the reset, so there is nothing to finish.
+        if reset_service.reset_in_progress():
+            return
         # Retrieve outputs before flipping to "completed" so a reader never
         # sees a completed job whose images haven't been stored yet.
         try:

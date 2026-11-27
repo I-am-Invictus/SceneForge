@@ -11,6 +11,7 @@ import { GalleryDetail } from './pages/GalleryDetail'
 import { History } from './pages/History'
 import { Workflows } from './pages/Workflows'
 import { SettingsPage } from './pages/SettingsPage'
+import { DeveloperOptions } from './pages/DeveloperOptions'
 import { AssetDetailPage } from './components/AssetDetailPage'
 
 export default function App() {
@@ -40,6 +41,7 @@ export default function App() {
             <Route path="/history" element={<History />} />
             <Route path="/workflows" element={<Workflows />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/developer" element={<DeveloperOptions />} />
             <Route path="*" element={<Navigate to="/generate" replace />} />
           </Routes>
         </main>

@@ -6,6 +6,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.assets import router as assets_router
+from app.api.developer import router as developer_router
 from app.api.galleries import router as galleries_router
 from app.api.jobs import router as jobs_router
 from app.api.media import router as media_router
@@ -44,6 +45,7 @@ app.include_router(media_router)
 app.include_router(workflows_router)
 app.include_router(jobs_router)
 app.include_router(galleries_router)
+app.include_router(developer_router)
 
 if FRONTEND_DIST.is_dir():
     assets_dir = FRONTEND_DIST / "assets"

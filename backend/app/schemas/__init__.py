@@ -31,3 +31,22 @@ class ComfyuiStatus(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     comfyui_connected: bool
+
+
+class DeveloperStatus(BaseModel):
+    dev_mode: bool
+
+
+class ResetConfirm(BaseModel):
+    # Must equal the literal "RESET" (typed by the user) to be accepted.
+    confirm: str
+
+
+class ResetReportOut(BaseModel):
+    ok: bool
+    before: dict[str, int]
+    after: dict[str, int]
+    files_removed: int
+    orphans_removed: int
+    backup_path: str | None
+    error: str | None

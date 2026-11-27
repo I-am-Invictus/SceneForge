@@ -17,6 +17,9 @@ class Settings(BaseSettings):
     sceneforge_data_dir: str = "/var/lib/sceneforge"
     jpeg_quality: int = 85
     thumb_max_dim: int = 320
+    # Developer mode unlocks the hidden "Developer Options" UI (notably the
+    # application-data reset). Off by default; enable with SCENEFORGE_DEV_MODE=1.
+    sceneforge_dev_mode: bool = False
 
     @property
     def data_dirs(self) -> dict[str, Path]:

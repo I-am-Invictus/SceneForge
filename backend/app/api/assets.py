@@ -17,6 +17,7 @@ from app.services.assets import AssetError, parse_tags, prepare_upload
 from app.services import folders as folder_service
 from app.services.folders import FolderError
 from app.services.images import media_token
+from app.services.reset import ResetInProgress, writer_guard
 
 router = APIRouter(prefix="/api/libraries/{kind}", tags=["assets"])
 
@@ -144,13 +145,18 @@ async def create_assets(
         )
     try:
         incoming = [await prepare_upload(f) for f in files]
-        if kind == KIND_CHARACTER:
-            asset = await asset_service.create_character(
-                db, name or "", folder_id, incoming
+        with writer_guard():
+            if kind == KIND_CHARACTER:
+                asset = await asset_service.create_character(
+                    db, name or "", folder_id, incoming
+                )
+                return [serialize_asset(asset)]
+            created = await asset_service.create_scenes(
+                db, name, folder_id, incoming
             )
-            return [serialize_asset(asset)]
-        created = await asset_service.create_scenes(db, name, folder_id, incoming)
-        return [serialize_asset(a) for a in created]
+            return [serialize_asset(a) for a in created]
+    except ResetInProgress as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     except (AssetError, FolderError) as exc:
         _raise_service_error(exc)
 
@@ -231,8 +237,11 @@ async def add_reference(
     try:
         for upload in files:
             incoming = await prepare_upload(upload)
-            asset = await asset_service.add_reference(db, kind, asset_id, incoming)
+            with writer_guard():
+                asset = await asset_service.add_reference(db, kind, asset_id, incoming)
         return serialize_asset(asset)
+    except ResetInProgress as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
     except (AssetError, FolderError) as exc:
         _raise_service_error(exc)
 
