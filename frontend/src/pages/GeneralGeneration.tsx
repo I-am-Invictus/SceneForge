@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react'
+import { ConfirmDialog } from '../components/ConfirmDialog'
 import { JobGallery } from '../components/JobGallery'
 import { JobResultViewer } from '../components/JobResultViewer'
 import {
   cancelJob,
+  deleteJobOutput,
   generate,
   getJob,
   listJobs,
@@ -43,6 +45,10 @@ export function GeneralGeneration() {
   const [cfgText, setCfgText] = useState('1')
   const [submitting, setSubmitting] = useState(false)
   const [formError, setFormError] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<{
+    clientId: string
+    outputId: number
+  } | null>(null)
 
   const workflow =
     workflows?.find((w) => w.category === 'general_generation' && w.enabled) ??
@@ -166,6 +172,17 @@ export function GeneralGeneration() {
     } catch (e) {
       setFormError((e as Error).message)
     }
+  }
+
+  async function handleDeleteConfirmed() {
+    if (!confirmDelete) return
+    const { clientId, outputId } = confirmDelete
+    const fresh = await deleteJobOutput(clientId, outputId)
+    setJobs((prev) => [fresh, ...prev.filter((j) => j.client_id !== clientId)])
+  }
+
+  const requestDelete = (clientId: string, outputId: number) => {
+    setConfirmDelete({ clientId, outputId })
   }
 
   function applyPreset(id: string) {
@@ -390,6 +407,9 @@ export function GeneralGeneration() {
                   ? handleCancel
                   : undefined
               }
+              onDeleteOutput={
+                viewerJob.status === 'completed' ? requestDelete : undefined
+              }
             />
           ) : (
             <div className="gen-empty">
@@ -405,11 +425,21 @@ export function GeneralGeneration() {
                 jobs={results}
                 selectedClientId={viewerJob?.client_id}
                 onSelect={setSelectedClientId}
+                onDelete={requestDelete}
               />
             </>
           )}
         </section>
       </div>
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="Delete generated image?"
+          message="This permanently removes the selected generated image and its thumbnail. Other outputs and your source assets are not affected."
+          onConfirm={handleDeleteConfirmed}
+          onClose={() => setConfirmDelete(null)}
+        />
+      )}
     </div>
   )
 }

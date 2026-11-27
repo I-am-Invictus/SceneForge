@@ -44,6 +44,7 @@ export function ImageComparison({
     original ? 'slider' : 'generated',
   )
   const [pos, setPos] = useState(50)
+  const [originalFailed, setOriginalFailed] = useState(false)
   const frameRef = useRef<HTMLDivElement>(null)
   const dragging = useRef(false)
 
@@ -51,7 +52,15 @@ export function ImageComparison({
     setPos(50)
   }, [resultKey])
 
-  const effectiveMode: CompareMode = original ? mode : 'generated'
+  useEffect(() => {
+    setOriginalFailed(false)
+  }, [original?.src])
+
+  // A source image that no longer exists (deleted asset) degrades the view
+  // to generated-only instead of showing a broken image.
+  const effectiveOriginal = original && !originalFailed ? original : null
+
+  const effectiveMode: CompareMode = effectiveOriginal ? mode : 'generated'
 
   const aspect =
     generated.width && generated.height
@@ -68,7 +77,7 @@ export function ImageComparison({
   }
 
   const sliderHandlers =
-    effectiveMode === 'slider' && original
+    effectiveMode === 'slider' && effectiveOriginal
       ? {
           onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => {
             dragging.current = true
@@ -88,7 +97,7 @@ export function ImageComparison({
       : {}
 
   let stage: ReactNode
-  if (effectiveMode === 'slider' && original) {
+  if (effectiveMode === 'slider' && effectiveOriginal) {
     stage = (
       <div
         ref={frameRef}
@@ -105,9 +114,10 @@ export function ImageComparison({
         <img
           className="compare-img compare-img--clip"
           style={{ clipPath: `inset(0 ${100 - pos}% 0 0)` }}
-          src={original.src}
-          alt={original.alt ?? 'Original'}
+          src={effectiveOriginal.src}
+          alt={effectiveOriginal.alt ?? 'Original'}
           draggable={false}
+          onError={() => setOriginalFailed(true)}
         />
         <div className="compare-divider" style={{ left: `${pos}%` }}>
           <button
@@ -130,14 +140,15 @@ export function ImageComparison({
         <span className="compare-tag compare-tag--right">Generated</span>
       </div>
     )
-  } else if (effectiveMode === 'side-by-side' && original) {
+  } else if (effectiveMode === 'side-by-side' && effectiveOriginal) {
     stage = (
       <div className="compare-sbs">
         <div className="compare-sbs-pane" style={{ aspectRatio: aspect }}>
           <img
-            src={original.src}
-            alt={original.alt ?? 'Original'}
+            src={effectiveOriginal.src}
+            alt={effectiveOriginal.alt ?? 'Original'}
             draggable={false}
+            onError={() => setOriginalFailed(true)}
           />
           <span className="compare-tag compare-tag--left">Original</span>
         </div>
@@ -151,14 +162,15 @@ export function ImageComparison({
         </div>
       </div>
     )
-  } else if (effectiveMode === 'original' && original) {
+  } else if (effectiveMode === 'original' && effectiveOriginal) {
     stage = (
       <div className="compare-frame" style={{ aspectRatio: aspect }}>
         <img
           className="compare-img"
-          src={original.src}
-          alt={original.alt ?? 'Original'}
+          src={effectiveOriginal.src}
+          alt={effectiveOriginal.alt ?? 'Original'}
           draggable={false}
+          onError={() => setOriginalFailed(true)}
         />
         <span className="compare-tag compare-tag--left">Original</span>
       </div>
@@ -203,7 +215,7 @@ export function ImageComparison({
           </button>
         )}
       </div>
-      {original && (
+      {effectiveOriginal && (
         <div className="compare-modes" role="group" aria-label="Comparison mode">
           {MODES.map((m) => (
             <button

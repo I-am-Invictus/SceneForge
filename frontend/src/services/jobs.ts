@@ -48,3 +48,12 @@ export function getJob(clientId: string): Promise<Job> {
 export function cancelJob(clientId: string): Promise<Job> {
   return request<Job>(`/api/jobs/${clientId}/cancel`, { method: 'POST' })
 }
+
+export function deleteJobOutput(
+  clientId: string,
+  outputId: number,
+): Promise<Job> {
+  return request<Job>(`/api/jobs/${clientId}/outputs/${outputId}`, {
+    method: 'DELETE',
+  })
+}

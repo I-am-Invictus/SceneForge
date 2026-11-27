@@ -7,7 +7,7 @@ from app.database.db import get_db
 from app.models import Job, JobOutput
 from app.schemas import JobError
 from app.schemas.jobs import GenerateRequest, JobOut, JobOutputOut
-from app.services import generation
+from app.services import generation, job_outputs
 from app.services.monitor import job_monitor
 
 router = APIRouter(tags=["jobs"])
@@ -82,6 +82,18 @@ async def get_job(client_id: str, db: Session = Depends(get_db)):
     job = db.query(Job).filter(Job.client_id == client_id).first()
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
+    return _serialize(job)
+
+
+@router.delete("/api/jobs/{client_id}/outputs/{output_id}", response_model=JobOut)
+async def delete_output(
+    client_id: str, output_id: int, db: Session = Depends(get_db)
+):
+    try:
+        job = job_outputs.delete_output(db, client_id, output_id)
+    except JobError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+    db.refresh(job)
     return _serialize(job)
 
 

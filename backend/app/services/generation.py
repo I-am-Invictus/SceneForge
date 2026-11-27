@@ -199,6 +199,21 @@ async def retrieve_outputs(db: Session, job: Job) -> list[JobOutput]:
     node_outputs = history.get("outputs", {})
     if not node_outputs:
         return []
+    # Only capture nodes the workflow spec declares as outputs (e.g. the
+    # SaveImage node). Intermediate nodes such as PreviewImage would
+    # otherwise be stored as duplicate results.
+    try:
+        spec = get_spec(job.workflow_id)
+        mapped = {m.node_id for mappings in spec.outputs.values() for m in mappings}
+        node_outputs = {
+            node_id: out
+            for node_id, out in node_outputs.items()
+            if node_id in mapped
+        }
+    except JobError:
+        pass  # spec no longer on disk: keep everything
+    if not node_outputs:
+        return []
     settings = get_settings()
     jpeg_quality, thumb_max_dim = image_settings(db)
     out_dir = settings.data_dirs["generated"] / job.client_id

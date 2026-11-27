@@ -12,6 +12,7 @@ const PATHS: Record<string, string> = {
   settings: 'M9 6.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM9 16.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM2.5 9h3M12.5 9h3M4.5 4.5L6 6M12 12l1.5 1.5M4.5 13.5L6 12M12 6l1.5-1.5',
   menu: 'M3 5h12M3 9h12M3 13h12',
   close: 'M5 5l8 8M13 5l-8 8',
+  trash: 'M4.5 6h9M7 6V4.5a1 1 0 011-1h2a1 1 0 011 1V6M6 6l.4 8.1a1 1 0 001 .9h3.2a1 1 0 001-.9L12 6M7.8 8.5v3.5M10.2 8.5v3.5',
 }
 
 export type IconName = keyof typeof PATHS

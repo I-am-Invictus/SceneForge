@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { Job } from '../types/jobs'
+import { Icon } from './icons'
 import { ImageComparison, type CompareImage } from './ImageComparison'
 
 function parseServerDate(iso: string | null): number | null {
@@ -56,6 +57,9 @@ interface JobResultViewerProps {
   canPrev?: boolean
   canNext?: boolean
   onCancel?: (clientId: string) => void
+  /** When provided, shows a delete action for the currently displayed
+   *  output. The parent is responsible for confirmation. */
+  onDeleteOutput?: (clientId: string, outputId: number) => void
 }
 
 export function JobResultViewer({
@@ -66,6 +70,7 @@ export function JobResultViewer({
   canPrev,
   canNext,
   onCancel,
+  onDeleteOutput,
 }: JobResultViewerProps) {
   const [outputIndex, setOutputIndex] = useState(0)
   useEffect(() => {
@@ -154,6 +159,23 @@ export function JobResultViewer({
         canPrev={canPrev}
         canNext={canNext}
       />
+      <div className="job-viewer-toolbar">
+        {job.outputs.length > 1 && (
+          <span className="output-count">
+            Result {outputIndex + 1} of {job.outputs.length}
+          </span>
+        )}
+        {onDeleteOutput && (
+          <button
+            type="button"
+            className="btn secondary job-delete-btn"
+            onClick={() => onDeleteOutput(job.client_id, output.id)}
+          >
+            <Icon name="trash" size={14} />
+            Delete image
+          </button>
+        )}
+      </div>
       {job.outputs.length > 1 && (
         <div className="output-picker">
           {job.outputs.map((o, i) => (
