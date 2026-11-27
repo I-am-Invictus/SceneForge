@@ -42,7 +42,7 @@ ComfyUI directly; everything goes through the backend over localhost.
 - **Phase 3 (ComfyUI integration):** DONE, verified live. Registry (`app/comfyui/registry.py`), adapter, jobs + WS monitor (`app/services/monitor.py`), output retrieval, `POST /api/generate/{id}`, `GET /api/jobs[/{id}]`, cancel, media endpoints. 42 backend tests.
   - Critical monitor facts: one stable `comfyui_client.monitor_client_id` is used both as the WS `clientId` **and** the prompt `client_id` (ComfyUI routes `execution_start/success/error` to the submitting client_id, not broadcast). Periodic resync (8s) + 30s lost-grace as safety net. `/queue` items are `[number, prompt_id, ...]` under keys `queue_running`/`queue_pending`.
 - **Phase 4 (general generation UI):** DONE, verified live (form, live progress, cancel, results gallery, generated-only comparison).
-- **Phase 5 (image modification UI) + generated-image deletion:** DONE, verified live (source picker/upload, Scene/Character editing modes, before/after comparison with real sources, output deletion, live ComfyUI jobs). See "Phase 5 implementation" below.
+- **Phase 5 (image modification UI) + generated-image deletion + move-to-library:** DONE, verified live (mode-aware source picker over Characters/Scenes, upload, before/after comparison with real sources, output deletion, move results into either library, live ComfyUI jobs). See "Phase 5 implementation" below.
 - **Phase 6 (character swap UI):** NOT STARTED.
 - Phase 7/8: workflow management UI, unified generation history (placeholder pages exist).
 
@@ -92,16 +92,19 @@ generation workflow.
   The workflow is a single instruction-based editor, so the mode only changes
   the prompt label/placeholder/guidance text — it is not a workflow input and
   is not sent to the backend (do not invent controls for it).
-- **Source selection** (`SourceImagePicker.tsx`): upload a new image (stored in
-  the Scenes library, Phase 2 APIs) or pick an existing scene file. Source is
-  referenced by `asset_file_id` and never modified.
+- **Source selection** (`SourceImagePicker.tsx`, kind-aware): the picker shows
+  the library matching the current mode — Scene mode lists/uploads the **Scenes**
+  library, Character mode lists/uploads the **Characters** library (Phase 2
+  APIs, no separate picker). Upload destination follows the mode. Source is
+  referenced by `asset_file_id` and never modified; any asset file (either
+  library) is a valid source for the edit workflow.
 - **Form inputs:** source, prompt, negative_prompt, size (auto = match source
   via `auto: "source"`, or custom ×8-rounded W/H), batch_size 1–8, denoise
   0–1, steps, seed (random/fixed).
 - **Original resolution for comparison:** `job.inputs.source_image.asset_file_id`
-  → scene file map → `/media/assets/{id}` passed as `original` to
-  `JobResultViewer` → `ImageComparison`. Missing source (deleted asset or
-  failed load) degrades to generated-only without breaking the gallery.
+  → map of asset files from **both** libraries → `/media/assets/{id}` passed as
+  `original` to `JobResultViewer` → `ImageComparison`. Missing source (deleted
+  asset or failed load) degrades to generated-only without breaking the gallery.
 - **Multiple outputs:** `batch_size > 1` yields multiple images on node 30 →
   output picker + "Result i of n" label + prev/next; all against the same
   original.
@@ -111,31 +114,52 @@ generation workflow.
 - **Generated-image deletion:** `DELETE /api/jobs/{client_id}/outputs/{output_id}`
   → `app/services/job_outputs.py`. Safety: path must resolve inside
   `/var/lib/sceneforge` (else 400); file removed only if no other `JobOutput`
-  references it; DB row committed before file unlink (storage failure can't
-  corrupt the DB); missing files tolerated. UI: trash on gallery cards +
-  "Delete image" in the viewer, both behind `ConfirmDialog`; state updates
-  immediately from the returned `JobOut`. Source assets and sibling outputs are
-  never touched.
+  **and no `AssetFile`** references it (moved outputs share the asset file's
+  stored path — deleting such an output keeps the image in the library); DB row
+  committed before file unlink (storage failure can't corrupt the DB); missing
+  files tolerated. UI: trash on gallery cards + "Delete image" in the viewer,
+  both behind `ConfirmDialog`; state updates immediately from the returned
+  `JobOut`. Source assets and sibling outputs are never touched.
+- **Move to library** (`POST /api/jobs/{client_id}/outputs/{output_id}/move`,
+  body `{"folder": "character" | "scene"}`): relocates the generated image's
+  bytes into `assets/{kind}/{uuid}/{uuid}{ext}` (fresh dir — no overwrite, no
+  duplication) and registers it as a new `Asset` + `AssetFile` (name = job
+  prompt, thumbnail regenerated via `images.make_thumbnail`). The
+  `JobOutput.stored_path` is updated in place, so the image stays in the job's
+  results and history; `/media/job-assets/{id}` keeps serving it. Re-moving
+  replaces the previous library entry (old `Asset`/`AssetFile` removed, old
+  thumbnail unlinked). The source asset is never touched. UI:
+  `MoveToLibraryDialog` (Characters | Scenes) from a move action on gallery
+  cards and in the result viewer toolbar.
 
 **Workflow input/output mapping (`qwen_image_edit_v1`):**
 source_image→8(image), prompt→3(prompt), negative_prompt→4(prompt),
 width/height→9 (auto: source), batch_size→9, seed/steps/denoise→2;
 outputs: images→30 (SaveImage, `filename_prefix: sceneforge_edit`).
 
-**Live verification actually executed (thor128-2, ComfyUI 0.46.0):**
-- Real Scene-edit job and Character-edit job: both completed (~18s), 1 output
-  each (node 30, 872×872); executed prompt node-sets confirmed = image-edit
-  workflow; full/thumbnail/source media all 200.
-- Deletion: 200 then 404 on repeat; deleted media 404; sibling output and
-  source asset file (on disk + `/media/assets/2`) intact.
-- Phase 4 regression: new general-generation job completed with output.
-- Backend: 49 pytest tests executed green. Frontend: `tsc && vite build` clean.
-- Browser-side visuals (mode chips, slider drag, confirm dialog) were
-  deployed but confirmed by the user in-browser only if reported.
+**Live verification actually executed (thor128-2, ComfyUI 0.46.0) — latest
+round, 43 API/byte-level checks, all PASS:**
+- Uploads through the existing path: new scene image (201) and new character
+  image (201).
+- Existing sources: scene (Titanic still) for Scene mode, character
+  (WonderWomen) for Character mode; both real edit jobs completed (~15s) and
+  both executed ComfyUI prompts contained the image-edit workflow node set.
+- Moves: scene result → Scenes, character result → Characters — bytes
+  relocated (sha256 identical, old path gone), both listed in their libraries
+  with original + thumbnail media 200; job results + history intact and
+  serving; both source assets byte-identical and 200.
+- Deletion: deleting a MOVED output kept the library image (ref-count fix);
+  plain general-generation output delete 200 → 404 → media 404; a
+  user-browser-moved output from an earlier round still served.
+- Backend: **58 pytest tests executed green** (49 Phase 3/5 + 9 move tests +
+  1 moved-deletion test). Frontend: `tsc && vite build` clean.
+- Browser-side visuals (mode chips, picker per mode, move dialog, slider)
+  deployed; the user has exercised the move action in-browser (one image
+  already lives in Scenes from that).
 
 ## Conventions
 
-- Backend: FastAPI + SQLAlchemy 2.0 sync sessions (`SessionLocal`), Pydantic schemas in `app/schemas/`, services in `app/services/`. Tests in `backend/tests/` (pytest, `conftest.py` sets a temp `SCENEFORGE_DATA_DIR`).
+- Backend: FastAPI + SQLAlchemy 2.0 sync sessions (`SessionLocal`), Pydantic schemas in `app/schemas/`, services in `app/services/`. Tests in `backend/tests/` (pytest; `tests/test_assets.py` sets a temp `SCENEFORGE_DATA_DIR` at import and other test modules import from it).
 - Frontend: React 18 + TS + Vite 5, react-router-dom 6. No test runner; `npm run build` (`tsc && vite build`) is the gate. Pages in `src/pages/`, components in `src/components/`, API clients in `src/services/`, types in `src/types/`. Dark theme via CSS variables in `src/styles.css` (see existing classes: `.page`, `.settings-card`, `.field`, `.btn`, `.asset-grid`, `.dialog`, `.form-error`).
 - API shape for jobs: `JobOut` (`client_id` is the job's public id; `outputs[].thumbnail_url` / `original_url`), `WorkflowOut` (inputs with `type`/`required`/`default`/`auto`).
 - ComfyUI input values: `seed: "random"` for random; numbers coerced by the adapter; image inputs are `{"asset_file_id": <id>}`.
