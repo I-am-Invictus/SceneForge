@@ -627,6 +627,48 @@ ran against production and cleared 9 pre-existing user assets (their image files
 are not recoverable; DB metadata is in the latest backup). Verify destructive
 actions against a temp `SCENEFORGE_DATA_DIR`, never production.
 
+## Add edited/generated images to existing asset references (this session)
+
+Extends "Move to library" so a generated/edited image can be attached to an
+**existing** Scene or Character's reference collection, not only filed as a new
+asset. Reuses the `AssetFile` model (no second reference system) and the
+shared-physical-file invariant: an image may be the reference for several
+assets and still be the file a job output serves.
+
+- **Backend** — `job_outputs.add_output_to_asset(db, client_id, output_id,
+  kind, asset_id, make_default)`. If the image already lives in a library (its
+  `stored_path` is under `assets/` or is already an `AssetFile`) its file is
+  **shared** (no copy); otherwise the bytes are **moved** into the destination
+  asset's `storage_dir` (mirrors the new-asset move) and the `JobOutput` row is
+  updated in place so the image stays in job results/history. Existing
+  references, `sort_order`, and default status are preserved; a requested
+  default demotes the previous one; associating the same output to the same
+  asset twice is rejected (409). New endpoint
+  `POST /api/jobs/{client_id}/outputs/{output_id}/add-reference`
+  (body `{kind, asset_id, make_default}`).
+- **Reference-count-aware deletion** — `assets.delete_file` now only unlinks
+  bytes that no `JobOutput` **and** no other `AssetFile` references, so removing
+  one association never deletes an image still in use (a moved output shares its
+  path with a `JobOutput`; a file may back references of several assets).
+- **Frontend** — `MoveToLibraryDialog` gains a **New asset / Existing asset**
+  switch. "New asset" keeps the original two immediate category buttons.
+  "Existing asset" shows a category selector (Characters / Scenes), a scrollable
+  picker of that category's assets, an optional "Set as default reference"
+  checkbox, and an "Add to selected asset" confirm (disabled until a pick).
+  `useMoveToLibrary` + `services/jobs.ts` gain `handleAddToExisting` /
+  `addJobOutputToAsset`; wired into General Generation, Image Modification,
+  Character Swapping, and the gallery detail page (the last inlines the call).
+- **Tests** — `backend/tests/test_job_outputs.py` +8 (both kinds, multiple refs
+  + ordering, default promotion, already-associated sharing with a single
+  physical file, remove-reference-keeps-shared-image, API contract). Suite is
+  120 passing.
+
+**Live acceptance (thor128-2):** 23/23 API checks (both kinds, multiple refs,
+set-default, duplicate→409, shared-file-no-copy, remove-keeps-image, existing
+move) and 9/9 Playwright UI checks at 375px (switch, category, populated picker,
+add-disabled-before-pick, no horizontal overflow, dialog closes, reference
+actually added). All test artifacts cleaned up.
+
 ## Conventions
 
 - Backend: FastAPI + SQLAlchemy 2.0 sync sessions (`SessionLocal`), Pydantic schemas in `app/schemas/`, services in `app/services/`. Tests in `backend/tests/` (pytest; `tests/test_assets.py` sets a temp `SCENEFORGE_DATA_DIR` at import and other test modules import from it).
