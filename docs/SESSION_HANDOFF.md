@@ -669,6 +669,86 @@ move) and 9/9 Playwright UI checks at 375px (switch, category, populated picker,
 add-disabled-before-pick, no horizontal overflow, dialog closes, reference
 actually added). All test artifacts cleaned up.
 
+## Job queue + ComfyUI dispatcher (this session)
+
+SceneForge now owns a **persistent, user-visible job queue**. Submitting a
+generation job no longer blocks on ComfyUI: the request validates the inputs
+and persists the job as `pending`, returning **202 immediately**. A background
+`JobDispatcher` feeds the queue to ComfyUI in FIFO order. This also fixed the
+old behaviour where a second concurrent submit 503'd (the `writer_guard`
+critical section is now synchronous — no `await`s — so two submits can't
+interleave and reject each other).
+
+**State machine** (`models/job.py`, `JOB_STATUSES`):
+```
+pending ──dispatcher──▶ dispatching ──POST /prompt ok──▶ queued ──▶ running ──▶ completed
+   │                          │                              │          │
+   │                          └── error ─▶ failed            └── error/interrupt ─▶ failed/interrupted
+   └── DELETE (not started) removes the job row entirely
+```
+- **pending** — persisted, not yet in ComfyUI (SceneForge's queue; survives restarts).
+- **dispatching** — the dispatcher is mid-submission (upload + `POST /prompt`); a committed crash-guard window.
+- **queued** — submitted to ComfyUI (has `comfyui_prompt_id`); in ComfyUI's own FIFO queue.
+- **running / completed / failed / interrupted** — unchanged from before (the monitor drives these).
+
+**Key pieces:**
+- `generation.submit_generation` (async, no ComfyUI calls): `get_spec` → enabled
+  check → template integrity → `_validate_inputs` (required inputs + image
+  `AssetFile` existence) → create `pending` job → commit. Type/deeper structural
+  errors are caught later at dispatch (the job then fails with the specific error).
+- `generation.dispatch_job(db, job)`: sets `dispatching` (committed), then uploads
+  the job's image inputs, auto-resolves source dims, `prepare`s a **fresh** copy of
+  the template, and submits the prompt — so ComfyUI-side state is always current.
+  On success sets `comfyui_prompt_id` + `status=queued`; on error `failed` + `error`.
+- `services/dispatcher.py` `JobDispatcher` (asyncio task, started/stopped in
+  `main.py` lifespan alongside the monitor): every `DISPATCH_INTERVAL=1.0s` it
+  probes ComfyUI via `GET /queue`; if reachable it takes the oldest
+  `DISPATCH_BATCH=8` `pending` jobs (ordered `created_at, id`) and dispatches each
+  in a fresh session. If ComfyUI is down the jobs simply stay `pending` — a
+  temporary unavailability never loses a queued job.
+- **Restart safety:** `JobDispatcher.start()` calls `reconcile_interrupted()`: a
+  job left `dispatching` with no `comfyui_prompt_id` (crash mid-submission) is
+  **failed, not re-submitted** — the only way to guarantee it never runs twice.
+  A never-dispatched `pending` job is left for the loop to dispatch normally. A
+  job already `queued`/`running` in ComfyUI is re-attached by the monitor's resync
+  (see below), so a SceneForge restart loses nothing.
+
+**Reliability guarantees:**
+- **No duplicate execution:** the dispatcher only selects `pending`; a dispatched
+  job is never re-selected, and a crashed `dispatching` job is failed rather than
+  re-run.
+- **No completed→active regression:** `JobMonitor._apply_event` now ignores any
+  event for a job already `completed`/`failed`/`interrupted`, so a late/duplicate
+  ComfyUI event can't move a finished job backwards. Resync still only selects
+  `queued`/`running`.
+- **ComfyUI restart/unavailable:** `pending` jobs wait and dispatch when ComfyUI
+  returns. A job already handed to ComfyUI when ComfyUI restarts is handled by the
+  existing resync (`LOST_GRACE_SECONDS` → failed "Lost…"), same as before.
+
+**User actions (distinct):**
+- **Remove** (`DELETE /api/jobs/{client_id}`) — only a not-started
+  (`pending`/`dispatching`) job; deletes the queue entry (it has no outputs/files).
+  A started job returns 409 ("cancel it instead").
+- **Cancel** (`POST .../cancel`) — `queued`/`running` interrupts in ComfyUI; now
+  also handles `pending`/`dispatching` (marks `interrupted`, nothing to interrupt).
+- **Clear** (Queue tab, recent list) — client-side, view-only: hides recently
+  finished jobs from the queue view without deleting any job or image.
+
+**Frontend:** a **Queue** tab (`/queue`, left nav) polls all jobs and shows
+**Running / Queued / Recent** (completed+failed, capped) with type, submission
+time, status, progress, and the failure reason; rows support Remove/Cancel and
+click-through to an inline `JobResultViewer` (move-to-library, add-to-gallery,
+delete-output, before/after). `JobResultViewer` renders the new `pending`/
+`dispatching` "waiting in the queue" state. The three generation pages submit
+through the same queue unchanged (their Run button is now instant).
+
+**Live acceptance (thor128-2, real inference):** 3 general-gen jobs submitted in
+0.03s all enqueued, executed FIFO, each completed with an output and no duplicate;
+a job submitted then SceneForge-restarted survived (re-attached via resync) and
+completed exactly once; UI: Run returns control in ~17ms, the job shows PENDING and
+appears in the Queue tab, no horizontal overflow at 390px, Clear works. Full backend
+suite: 131 passing (11 new in `tests/test_queue.py`).
+
 ## Conventions
 
 - Backend: FastAPI + SQLAlchemy 2.0 sync sessions (`SessionLocal`), Pydantic schemas in `app/schemas/`, services in `app/services/`. Tests in `backend/tests/` (pytest; `tests/test_assets.py` sets a temp `SCENEFORGE_DATA_DIR` at import and other test modules import from it).
@@ -680,3 +760,4 @@ actually added). All test artifacts cleaned up.
 
 - Reboot survival of `sceneforge.service` never explicitly verified (restart survival is).
 - ComfyUI `server.client_id` is global last-write-wins; if the user's ComfyUI UI submits prompts concurrently, SceneForge WS events may miss — the periodic resync covers this (jobs still complete, possibly slightly later).
+- Queue: submit-time validation is intentionally ComfyUI-free and lightweight (required inputs + image `AssetFile` existence); type/deeper structural errors surface at **dispatch** time as a job `failed` with the specific message, not as a submit-time 4xx. A job that crashes in the brief `dispatching` window (between marking and the `/prompt` commit) is **failed, not re-run** (safe no-duplicate choice). The dispatcher drains ≤`DISPATCH_BATCH` jobs/`DISPATCH_INTERVAL`, so a very large burst takes a few seconds to fully hand to ComfyUI (ComfyUI then runs them FIFO).
