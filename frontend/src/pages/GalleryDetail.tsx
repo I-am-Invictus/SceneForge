@@ -12,7 +12,7 @@ import {
   removeGalleryImage,
   renameGallery,
 } from '../services/galleries'
-import { deleteJobOutput, moveJobOutput } from '../services/jobs'
+import { addJobOutputToAsset, deleteJobOutput, moveJobOutput } from '../services/jobs'
 import type { AssetKind } from '../types/assets'
 import type { Gallery, GalleryImage } from '../types/galleries'
 
@@ -294,6 +294,15 @@ export function GalleryDetail() {
               moveTarget.clientId,
               moveTarget.outputId,
               folder,
+            )
+          }}
+          onAddToExisting={async (kind: AssetKind, assetId: number, makeDefault: boolean) => {
+            await addJobOutputToAsset(
+              moveTarget.clientId,
+              moveTarget.outputId,
+              kind,
+              assetId,
+              makeDefault,
             )
           }}
           onClose={() => setMoveTarget(null)}

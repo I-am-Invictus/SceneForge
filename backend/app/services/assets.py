@@ -342,6 +342,31 @@ def _path_referenced_by_outputs(db: Session, rel_path: str) -> bool:
     )
 
 
+def _path_referenced_by_asset_files(
+    db: Session, rel_path: str, exclude_file_id: int | None = None
+) -> bool:
+    # A physical file may be shared by references of more than one asset (e.g.
+    # a generated image attached to several assets). Removing one association
+    # must not delete bytes another reference still uses.
+    query = db.query(AssetFile).filter(
+        or_(
+            AssetFile.stored_path == rel_path,
+            AssetFile.thumbnail_path == rel_path,
+        )
+    )
+    if exclude_file_id is not None:
+        query = query.filter(AssetFile.id != exclude_file_id)
+    return query.count() > 0
+
+
+def _path_still_in_use(
+    db: Session, rel_path: str, exclude_file_id: int | None = None
+) -> bool:
+    return _path_referenced_by_outputs(db, rel_path) or _path_referenced_by_asset_files(
+        db, rel_path, exclude_file_id
+    )
+
+
 def _file_referenced_by_job_inputs(db: Session, asset_file: AssetFile) -> bool:
     # Image inputs are recorded in each job's input summary as
     # {"asset_file_id": <id>}; historical before/after comparisons rely on
@@ -410,8 +435,13 @@ def delete_file(db: Session, kind: str, file_id: int) -> Asset:
     asset = asset_file.asset
     was_default = asset_file.is_default
     remaining = [f for f in asset.files if f.id != file_id]
-    _delete_file_on_disk(asset_file.stored_path)
-    _delete_file_on_disk(asset_file.thumbnail_path)
+    # Only unlink bytes that nothing else references: a moved output shares its
+    # stored path with a JobOutput, and a file may back references of several
+    # assets. Removing one association must never delete such a shared image.
+    if not _path_still_in_use(db, asset_file.stored_path, exclude_file_id=file_id):
+        _delete_file_on_disk(asset_file.stored_path)
+    if not _path_still_in_use(db, asset_file.thumbnail_path, exclude_file_id=file_id):
+        _delete_file_on_disk(asset_file.thumbnail_path)
     db.delete(asset_file)
     if was_default and remaining:
         remaining[0].is_default = True

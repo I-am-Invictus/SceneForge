@@ -111,3 +111,9 @@ class GenerateRequest(BaseModel):
 
 class JobOutputMove(BaseModel):
     folder: Literal["character", "scene"]
+
+
+class JobOutputAddReference(BaseModel):
+    kind: Literal["character", "scene"]
+    asset_id: int
+    make_default: bool = False

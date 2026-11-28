@@ -9,6 +9,7 @@ from app.schemas import JobError
 from app.schemas.jobs import (
     GenerateRequest,
     JobOut,
+    JobOutputAddReference,
     JobOutputMove,
     JobOutputOut,
 )
@@ -120,6 +121,30 @@ async def move_output(
     try:
         job = job_outputs.move_output_to_library(
             db, client_id, output_id, payload.folder
+        )
+    except JobError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+    db.refresh(job)
+    return _serialize(job)
+
+
+@router.post(
+    "/api/jobs/{client_id}/outputs/{output_id}/add-reference", response_model=JobOut
+)
+async def add_output_reference(
+    client_id: str,
+    output_id: int,
+    payload: JobOutputAddReference,
+    db: Session = Depends(get_db),
+):
+    try:
+        job = job_outputs.add_output_to_asset(
+            db,
+            client_id,
+            output_id,
+            payload.kind,
+            payload.asset_id,
+            payload.make_default,
         )
     except JobError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message)

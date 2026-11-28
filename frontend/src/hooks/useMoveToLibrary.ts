@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react'
-import { moveJobOutput } from '../services/jobs'
+import { addJobOutputToAsset, moveJobOutput } from '../services/jobs'
 import type { Job } from '../types/jobs'
 import type { AssetKind } from '../types/assets'
 
@@ -35,7 +35,23 @@ export function useMoveToLibrary(upsertJob: (job: Job) => void) {
     [moveTarget, upsertJob],
   )
 
+  const handleAddToExisting = useCallback(
+    async (kind: AssetKind, assetId: number, makeDefault: boolean) => {
+      if (!moveTarget) return
+      const { clientId, outputId } = moveTarget
+      const fresh = await addJobOutputToAsset(
+        clientId,
+        outputId,
+        kind,
+        assetId,
+        makeDefault,
+      )
+      upsertJob(fresh)
+    },
+    [moveTarget, upsertJob],
+  )
+
   const closeMove = useCallback(() => setMoveTarget(null), [])
 
-  return { moveTarget, requestMove, handleMove, closeMove }
+  return { moveTarget, requestMove, handleMove, handleAddToExisting, closeMove }
 }

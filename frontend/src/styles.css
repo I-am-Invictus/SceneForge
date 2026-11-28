@@ -1800,6 +1800,123 @@ button {
   cursor: default;
 }
 
+/* Category selector state (used when picking a destination asset). */
+.move-option.selected {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  cursor: default;
+}
+
+/* Segmented mode switch: new asset vs. existing asset. */
+.seg {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 3px;
+  margin-bottom: 14px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+}
+
+.seg button {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  padding: 7px 10px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
+}
+
+.seg button:hover:not(:disabled) {
+  color: var(--text);
+}
+
+.seg button.active {
+  background: var(--accent);
+  color: #fff;
+}
+
+.seg button:disabled {
+  cursor: default;
+}
+
+/* Existing-asset picker. */
+.existing-pick {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.existing-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 240px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.existing-pick-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-elevated);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+
+.existing-pick-row:hover:not(:disabled) {
+  border-color: var(--border);
+}
+
+.existing-pick-row.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.existing-pick-row:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.existing-pick-row img {
+  width: 40px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+  background: var(--bg-panel);
+}
+
+.existing-pick-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.existing-pick-count {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
 .job-viewer-toolbar {
   display: flex;
   align-items: center;

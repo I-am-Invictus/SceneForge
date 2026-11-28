@@ -5,12 +5,20 @@ from unittest.mock import AsyncMock
 from app.comfyui import comfyui_client
 from app.database.db import SessionLocal
 from app.main import app
-from app.models import AssetFile, Job, JobOutput
+from app.models import Asset, AssetFile, Job, JobOutput
 from app.schemas import JobError
 from app.services import generation, job_outputs
 from fastapi.testclient import TestClient
 
 from test_assets import data_root, make_image, upload
+
+
+def make_asset(client, kind: str, name: str = "Existing") -> tuple[int, dict]:
+    """Create an existing asset with one reference via the normal upload path."""
+    res = upload(client, kind, files=[("base.png", make_image())], name=name)
+    assert res.status_code == 201, res.text
+    (asset,) = res.json()
+    return asset["id"], asset
 
 
 def make_job_with_outputs(n_outputs: int = 2, shared_path: bool = False):
@@ -432,3 +440,226 @@ def test_move_output_api_endpoint():
     assert any(
         any(f["id"] == lib_file_id for f in a["files"]) for a in scene_assets
     )
+
+
+# --- attaching a generated output to an EXISTING asset --------------------
+
+
+def _add(client_id, out_id, kind, asset_id, make_default=False):
+    with SessionLocal() as db:
+        return job_outputs.add_output_to_asset(
+            db, client_id, out_id, kind, asset_id, make_default
+        )
+
+
+def test_add_output_to_existing_character_asset():
+    client = TestClient(app)
+    asset_id, existing = make_asset(client, "character")
+    (base_file,) = existing["files"]
+    client_id, (out_a,) = make_job_with_outputs(1)
+    with SessionLocal() as db:
+        old_rel = db.get(JobOutput, out_a).stored_path
+
+    job = _add(client_id, out_a, "character", asset_id)
+    assert job.client_id == client_id
+
+    # Bytes were relocated into the existing asset's storage dir, not copied.
+    assert not (data_root() / old_rel).exists()
+    with SessionLocal() as db:
+        new_rel = db.get(JobOutput, out_a).stored_path
+    assert new_rel.startswith("assets/character/")
+    assert (data_root() / new_rel).is_file()
+
+    # The asset now has two references: the original (unchanged, still default)
+    # and the newly attached one (not default, appended).
+    res = client.get(f"/api/libraries/character/assets/{asset_id}")
+    assert res.status_code == 200
+    files = res.json()["files"]
+    assert len(files) == 2
+    by_id = {f["id"]: f for f in files}
+    assert by_id[base_file["id"]]["is_default"] is True
+    assert by_id[base_file["id"]]["sort_order"] == 0
+    (new_file,) = [f for f in files if f["id"] != base_file["id"]]
+    assert new_file["is_default"] is False
+    assert new_file["sort_order"] == 1
+    assert new_file["width"] == 64 and new_file["height"] == 48
+    assert client.get(new_file["original_url"]).status_code == 200
+    # The job result still serves the (moved) image.
+    assert client.get(f"/media/job-assets/{out_a}").status_code == 200
+
+
+def test_add_output_to_existing_scene_asset():
+    client = TestClient(app)
+    asset_id, existing = make_asset(client, "scene")
+    before = len(client.get("/api/libraries/scene/assets").json())
+    client_id, (out_a,) = make_job_with_outputs(1)
+    _add(client_id, out_a, "scene", asset_id)
+    # No new asset is created; the existing scene just gains a reference.
+    assert len(client.get("/api/libraries/scene/assets").json()) == before
+    res = client.get(f"/api/libraries/scene/assets/{asset_id}")
+    assert res.status_code == 200
+    assert res.json()["reference_count"] == len(existing["files"]) + 1
+
+
+def test_add_multiple_references_to_same_asset():
+    client = TestClient(app)
+    asset_id, _ = make_asset(client, "character")
+    client_id, (out_a, out_b) = make_job_with_outputs(2)
+    _add(client_id, out_a, "character", asset_id)
+    _add(client_id, out_b, "character", asset_id)
+    res = client.get(f"/api/libraries/character/assets/{asset_id}")
+    files = res.json()["files"]
+    assert len(files) == 3  # original + two attached
+    sort_orders = sorted(f["sort_order"] for f in files)
+    assert sort_orders == [0, 1, 2]
+    with SessionLocal() as db:
+        path_a = db.get(JobOutput, out_a).stored_path
+        path_b = db.get(JobOutput, out_b).stored_path
+    assert path_a != path_b
+    assert (data_root() / path_a).is_file()
+    assert (data_root() / path_b).is_file()
+
+
+def test_add_output_can_become_new_default():
+    client = TestClient(app)
+    asset_id, existing = make_asset(client, "character")
+    (base_file,) = existing["files"]
+    client_id, (out_a,) = make_job_with_outputs(1)
+    _add(client_id, out_a, "character", asset_id, make_default=True)
+    res = client.get(f"/api/libraries/character/assets/{asset_id}")
+    files = res.json()["files"]
+    by_id = {f["id"]: f for f in files}
+    (new_file,) = [f for f in files if f["id"] != base_file["id"]]
+    assert new_file["is_default"] is True
+    assert by_id[base_file["id"]]["is_default"] is False  # demoted
+    assert sum(1 for f in files if f["is_default"]) == 1  # exactly one default
+
+
+def test_add_output_already_associated_is_rejected():
+    client = TestClient(app)
+    asset_id, _ = make_asset(client, "character")
+    client_id, (out_a,) = make_job_with_outputs(1)
+    _add(client_id, out_a, "character", asset_id)
+    with SessionLocal() as db:
+        try:
+            job_outputs.add_output_to_asset(db, client_id, out_a, "character", asset_id)
+            assert False, "expected JobError"
+        except JobError as exc:
+            assert exc.status_code == 409
+    # Still exactly one reference of that image on the asset.
+    res = client.get(f"/api/libraries/character/assets/{asset_id}")
+    assert res.json()["reference_count"] == 2
+
+
+def test_add_output_already_in_library_shares_file():
+    client = TestClient(app)
+    asset_a, _ = make_asset(client, "character")
+    asset_b, _ = make_asset(client, "character")
+    client_id, (out_a,) = make_job_with_outputs(1)
+    _add(client_id, out_a, "character", asset_a)
+    with SessionLocal() as db:
+        shared_rel = db.get(JobOutput, out_a).stored_path
+    # Attach the same (now-library) image to a second asset: the physical file
+    # is reused, not copied or moved.
+    _add(client_id, out_a, "character", asset_b)
+    with SessionLocal() as db:
+        refs = (
+            db.query(AssetFile)
+            .filter(AssetFile.stored_path == shared_rel)
+            .all()
+        )
+    assert len(refs) == 2  # one reference per asset
+    assert {r.asset_id for r in refs} == {asset_a, asset_b}
+    assert (data_root() / shared_rel).is_file()
+    # Exactly one physical file backs both references.
+    res_a = client.get(f"/api/libraries/character/assets/{asset_a}")
+    res_b = client.get(f"/api/libraries/character/assets/{asset_b}")
+    url_a = [f["original_url"] for f in res_a.json()["files"]][-1]
+    url_b = [f["original_url"] for f in res_b.json()["files"]][-1]
+    assert client.get(url_a).status_code == 200
+    assert client.get(url_b).status_code == 200
+    assert client.get(f"/media/job-assets/{out_a}").status_code == 200
+
+
+def test_remove_reference_keeps_shared_image():
+    client = TestClient(app)
+    asset_id, _ = make_asset(client, "character")
+    client_id, (out_a,) = make_job_with_outputs(1)
+    _add(client_id, out_a, "character", asset_id)
+    with SessionLocal() as db:
+        shared_rel = db.get(JobOutput, out_a).stored_path
+        (ref,) = [
+            f
+            for f in db.query(AssetFile).filter(AssetFile.asset_id == asset_id)
+            if f.stored_path == shared_rel
+        ]
+        ref_id = ref.id
+    # Removing the association must NOT delete the bytes the JobOutput still uses.
+    res = client.delete(
+        f"/api/libraries/character/assets/{asset_id}/files/{ref_id}"
+    )
+    assert res.status_code == 200
+    assert (data_root() / shared_rel).is_file(), "shared image must survive"
+    assert client.get(f"/media/job-assets/{out_a}").status_code == 200
+
+
+def test_add_reference_api_endpoint():
+    client = TestClient(app)
+    char_id, _ = make_asset(client, "character")
+    scene_id, _ = make_asset(client, "scene")
+    client_id, (out_a, out_b) = make_job_with_outputs(2)
+
+    res = client.post(
+        f"/api/jobs/{client_id}/outputs/{out_a}/add-reference",
+        json={"kind": "character", "asset_id": char_id, "make_default": False},
+    )
+    assert res.status_code == 200, res.text
+    assert [o["id"] for o in res.json()["outputs"]] == [out_a, out_b]
+
+    # Wrong kind for the asset, unknown asset, unknown output, unknown job.
+    assert (
+        client.post(
+            f"/api/jobs/{client_id}/outputs/{out_b}/add-reference",
+            json={"kind": "scene", "asset_id": char_id},  # char_id is a character
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/api/jobs/{client_id}/outputs/{out_b}/add-reference",
+            json={"kind": "scene", "asset_id": 999999},
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/api/jobs/{client_id}/outputs/999999/add-reference",
+            json={"kind": "scene", "asset_id": scene_id},
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            "/api/jobs/nope/outputs/1/add-reference",
+            json={"kind": "scene", "asset_id": scene_id},
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/api/jobs/{client_id}/outputs/{out_b}/add-reference",
+            json={"kind": "bogus", "asset_id": scene_id},
+        ).status_code
+        == 422
+    )
+    # Attach out_b to scene_id, then a second identical call is a duplicate.
+    first = client.post(
+        f"/api/jobs/{client_id}/outputs/{out_b}/add-reference",
+        json={"kind": "scene", "asset_id": scene_id},
+    )
+    assert first.status_code == 200, first.text
+    res2 = client.post(
+        f"/api/jobs/{client_id}/outputs/{out_b}/add-reference",
+        json={"kind": "scene", "asset_id": scene_id},
+    )
+    assert res2.status_code == 409

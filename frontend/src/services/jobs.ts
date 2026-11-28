@@ -69,3 +69,20 @@ export function moveJobOutput(
     body: JSON.stringify({ folder }),
   })
 }
+
+export function addJobOutputToAsset(
+  clientId: string,
+  outputId: number,
+  kind: 'character' | 'scene',
+  assetId: number,
+  makeDefault: boolean,
+): Promise<Job> {
+  return request<Job>(
+    `/api/jobs/${clientId}/outputs/${outputId}/add-reference`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind, asset_id: assetId, make_default: makeDefault }),
+    },
+  )
+}

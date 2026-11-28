@@ -60,7 +60,7 @@ export function GeneralGeneration() {
       ...prev.filter((j) => j.client_id !== fresh.client_id),
     ])
   }, [])
-  const { moveTarget, requestMove, handleMove, closeMove } =
+  const { moveTarget, requestMove, handleMove, handleAddToExisting, closeMove } =
     useMoveToLibrary(upsertJob)
   const { target: galleryTarget, requestAdd, closeAdd } = useAddToGallery()
 
@@ -451,7 +451,13 @@ export function GeneralGeneration() {
         </section>
       </div>
 
-      {moveTarget && <MoveToLibraryDialog onMove={handleMove} onClose={closeMove} />}
+      {moveTarget && (
+        <MoveToLibraryDialog
+          onMove={handleMove}
+          onAddToExisting={handleAddToExisting}
+          onClose={closeMove}
+        />
+      )}
 
       {galleryTarget && (
         <AddToGalleryDialog outputId={galleryTarget.outputId} onClose={closeAdd} />
