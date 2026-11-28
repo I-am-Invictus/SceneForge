@@ -49,6 +49,10 @@ export function cancelJob(clientId: string): Promise<Job> {
   return request<Job>(`/api/jobs/${clientId}/cancel`, { method: 'POST' })
 }
 
+export function removeJob(clientId: string): Promise<void> {
+  return request<void>(`/api/jobs/${clientId}`, { method: 'DELETE' })
+}
+
 export function deleteJobOutput(
   clientId: string,
   outputId: number,

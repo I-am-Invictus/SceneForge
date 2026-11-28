@@ -12,6 +12,7 @@ import { History } from './pages/History'
 import { Workflows } from './pages/Workflows'
 import { SettingsPage } from './pages/SettingsPage'
 import { DeveloperOptions } from './pages/DeveloperOptions'
+import { Queue } from './pages/Queue'
 import { AssetDetailPage } from './components/AssetDetailPage'
 
 export default function App() {
@@ -25,6 +26,7 @@ export default function App() {
             <Route path="/generate" element={<GeneralGeneration />} />
             <Route path="/modify" element={<ImageModification />} />
             <Route path="/swap" element={<CharacterSwap />} />
+            <Route path="/queue" element={<Queue />} />
             <Route path="/characters" element={<Characters />} />
             <Route
               path="/characters/:id"

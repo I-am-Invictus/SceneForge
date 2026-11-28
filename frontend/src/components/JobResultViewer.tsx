@@ -95,7 +95,8 @@ export function JobResultViewer({
     </div>
   )
 
-  if (job.status === 'queued' || job.status === 'running') {
+  const isWaiting = job.status === 'pending' || job.status === 'dispatching'
+  if (job.status === 'queued' || job.status === 'running' || isWaiting) {
     return (
       <div className="job-viewer job-viewer--active">
         {head}
@@ -118,7 +119,9 @@ export function JobResultViewer({
           />
         </div>
         <div className="job-viewer-sub">
-          {Math.round(job.progress * 100)}% · {job.status} on ComfyUI
+          {isWaiting
+            ? 'Waiting in the queue…'
+            : `${Math.round(job.progress * 100)}% · ${job.status} on ComfyUI`}
         </div>
       </div>
     )

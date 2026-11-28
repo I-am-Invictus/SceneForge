@@ -6,7 +6,27 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database.db import Base
 from app.models.setting import utcnow
 
-JOB_STATUSES = ("queued", "running", "completed", "failed", "interrupted")
+# Lifecycle:
+#   pending      created and persisted; waiting for the dispatcher to send it
+#                to ComfyUI (this is SceneForge's own queue; survives restarts)
+#   dispatching  the dispatcher is mid-submission (upload + POST /prompt); a
+#                crash here is reconciled on startup so the job never runs twice
+#   queued       submitted to ComfyUI (has comfyui_prompt_id); waiting in
+#                ComfyUI's own FIFO queue
+#   running      ComfyUI is executing the prompt
+#   completed / failed / interrupted  terminal
+JOB_STATUSES = (
+    "pending",
+    "dispatching",
+    "queued",
+    "running",
+    "completed",
+    "failed",
+    "interrupted",
+)
+# Non-terminal states the dispatcher/monitor act on.
+ACTIVE_STATUSES = ("pending", "dispatching", "queued", "running")
+TERMINAL_STATUSES = ("completed", "failed", "interrupted")
 
 
 class Job(Base):
@@ -19,7 +39,7 @@ class Job(Base):
     workflow_version: Mapped[int] = mapped_column(Integer, default=1)
     workflow_name: Mapped[str] = mapped_column(String(200))
     category: Mapped[str] = mapped_column(String(40))
-    status: Mapped[str] = mapped_column(String(20), default="queued", index=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
     progress: Mapped[float] = mapped_column(Float, default=0.0)
     prompt: Mapped[str | None] = mapped_column(Text)
     inputs_json: Mapped[str] = mapped_column(Text, default="{}")

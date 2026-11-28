@@ -17,6 +17,7 @@ const SECTIONS: { title: string; items: NavItem[] }[] = [
       { to: '/generate', label: 'General Generation', icon: 'generate' },
       { to: '/modify', label: 'Image Modification', icon: 'modify' },
       { to: '/swap', label: 'Character Swapping', icon: 'swap' },
+      { to: '/queue', label: 'Queue', icon: 'queue' },
     ],
   },
   {

@@ -17,6 +17,7 @@ from app.comfyui import comfyui_client
 from app.config import get_settings
 from app.database.db import SessionLocal, init_db
 from app.services import generation
+from app.services.dispatcher import job_dispatcher
 from app.services.monitor import job_monitor
 
 FRONTEND_DIST = (
@@ -31,7 +32,9 @@ async def lifespan(app: FastAPI):
     with SessionLocal() as db:
         generation.sync_registry(db)
     await job_monitor.start()
+    await job_dispatcher.start()
     yield
+    await job_dispatcher.stop()
     await job_monitor.stop()
     await comfyui_client.close()
 

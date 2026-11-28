@@ -74,6 +74,11 @@ def test_submit_person_swap_end_to_end_mocked(monkeypatch):
                 },
             )
             db.refresh(job)
+            # Submit only enqueues; dispatch performs the ComfyUI round-trip.
+            assert job.status == "pending"
+            assert job.comfyui_prompt_id is None
+            job = await generation.dispatch_job(db, job)
+            db.refresh(job)
             return job, scene.id, character.id
 
     job, scene_id, character_id = asyncio.run(run())
@@ -202,7 +207,7 @@ def test_auto_source_size_for_image_edit(monkeypatch):
     async def run():
         with SessionLocal() as db:
             source = make_asset_file(db, make_image((300, 200)))
-            await generation.submit_generation(
+            job = await generation.submit_generation(
                 db,
                 "qwen_image_edit_v1",
                 {
@@ -210,6 +215,7 @@ def test_auto_source_size_for_image_edit(monkeypatch):
                     "prompt": "make it darker",
                 },
             )
+            await generation.dispatch_job(db, job)
 
     asyncio.run(run())
     workflow = submitted["workflow"]

@@ -16,6 +16,7 @@ const PATHS: Record<string, string> = {
   trash: 'M4.5 6h9M7 6V4.5a1 1 0 011-1h2a1 1 0 011 1V6M6 6l.4 8.1a1 1 0 001 .9h3.2a1 1 0 001-.9L12 6M7.8 8.5v3.5M10.2 8.5v3.5',
   moveToLibrary: 'M3 8h4l1.5 1.5H15V16H3zM9 2v4.5M6.8 4.3 9 6.5l2.2-2.2',
   developer: 'M4 6l3 3-3 3M9 12h5',
+  queue: 'M3 5h12M3 9h12M3 13h7 M13 12v5M13 17l-2-2M13 17l2-2',
 }
 
 export type IconName = keyof typeof PATHS

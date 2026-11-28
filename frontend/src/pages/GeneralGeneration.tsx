@@ -413,11 +413,11 @@ export function GeneralGeneration() {
               onNext={goNext}
               canPrev={canPrev}
               canNext={canNext}
-              onCancel={
-                viewerJob.status === 'queued' || viewerJob.status === 'running'
-                  ? handleCancel
-                  : undefined
-              }
+               onCancel={
+                 !TERMINAL_STATUSES.includes(viewerJob.status)
+                   ? handleCancel
+                   : undefined
+               }
               onDeleteOutput={
                 viewerJob.status === 'completed' ? requestDelete : undefined
               }

@@ -126,11 +126,12 @@ def test_submit_uses_stable_monitor_client_id(monkeypatch):
 
     async def run():
         with SessionLocal() as db:
-            await generation.submit_generation(
+            job = await generation.submit_generation(
                 db,
                 "qwen_image_gen_v1",
                 {"prompt": "a lighthouse", "width": 832, "height": 1216},
             )
+            await generation.dispatch_job(db, job)
 
     asyncio.run(run())
     assert captured["client_id"] == comfyui_client.monitor_client_id

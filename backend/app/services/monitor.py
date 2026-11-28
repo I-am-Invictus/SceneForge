@@ -114,6 +114,10 @@ class JobMonitor:
     async def _apply_event(
         self, db: Session, job: Job, event: str, payload: dict
     ) -> None:
+        # Never let a terminal job move backwards (e.g. a late or duplicate
+        # ComfyUI event must not turn a completed job back into running).
+        if job.status in ("completed", "failed", "interrupted"):
+            return
         if event == "execution_start" and job.status == "queued":
             job.status = "running"
             job.started_at = utcnow()
@@ -250,10 +254,12 @@ class JobMonitor:
             job = db.scalar(select(Job).where(Job.client_id == client_id))
             if job is None:
                 return False
-            if job.status not in ("queued", "running"):
+            if job.status not in ("pending", "dispatching", "queued", "running"):
                 return False
+            # Not yet submitted to ComfyUI: nothing to interrupt — just stop it.
             if not job.comfyui_prompt_id:
                 job.status = "interrupted"
+                job.error = "Cancelled before it reached ComfyUI"
                 job.finished_at = utcnow()
                 db.commit()
                 return True

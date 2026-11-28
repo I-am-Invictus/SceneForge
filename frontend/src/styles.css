@@ -1299,6 +1299,145 @@ button {
   transition: width 0.4s ease;
 }
 
+/* ---------- Queue page ---------- */
+
+.queue-layout {
+  display: grid;
+  grid-template-columns: 400px minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+/* Same min-content guard as .gen-layout so the mobile single column can't
+   overflow horizontally as queue rows update. */
+.queue-layout > * {
+  min-width: 0;
+}
+
+.queue {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  position: sticky;
+  top: 24px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.queue-section-title {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin: 0 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.queue-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.queue-section-head .queue-section-title {
+  margin-bottom: 0;
+}
+
+.queue-count {
+  font-size: 11px;
+  color: var(--text-faint);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+.queue-empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-faint);
+  padding: 10px 2px;
+}
+
+.queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.queue-row {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.queue-row.selected {
+  border-color: var(--accent);
+}
+
+.queue-row-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.queue-row-kind {
+  font-size: 12px;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-row-time {
+  font-size: 11px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.queue-row-prompt {
+  font-size: 13px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.queue-row-error {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--err);
+  overflow-wrap: anywhere;
+}
+
+.queue-row .progress {
+  margin-top: 8px;
+}
+
+.queue-row .btn {
+  padding: 3px 10px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+/* Waiting-in-queue states render like "queued". */
+.job-state--pending,
+.job-state--dispatching {
+  color: var(--text-dim);
+  border-color: var(--border);
+  background: var(--bg-elevated);
+}
+
 /* ---------- Results gallery ---------- */
 
 .results-title {
@@ -2134,6 +2273,16 @@ button {
 
   .gen-form {
     position: static;
+  }
+
+  .queue-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .queue {
+    position: static;
+    max-height: none;
+    overflow-y: visible;
   }
 
   .compare-sbs {

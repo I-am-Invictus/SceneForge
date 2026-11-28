@@ -31,6 +31,30 @@ def _unlink(base: Path, rel_path: str) -> None:
         logger.warning("Could not remove %s: %s", rel_path, exc)
 
 
+def remove_job(db: Session, client_id: str) -> str:
+    """Remove a job that has not started (``pending``/``dispatching``).
+
+    This is the queue "remove" action and is deliberately distinct from
+    deleting generated output or historical job records: a not-started job has
+    no outputs and no files, so removing it just drops its queue entry. A job
+    that has already reached ComfyUI (``queued``/``running``) must be cancelled
+    instead, so it is rejected here.
+    """
+    job = db.scalar(select(Job).where(Job.client_id == client_id))
+    if job is None:
+        raise JobError(404, "Job not found")
+    if job.status not in ("pending", "dispatching"):
+        raise JobError(
+            409,
+            f"Job has started and cannot be removed (status: {job.status}); "
+            "cancel it instead",
+        )
+    removed = job.client_id
+    db.delete(job)
+    db.commit()
+    return removed
+
+
 def delete_output(db: Session, client_id: str, output_id: int) -> Job:
     """Permanently delete a single generated output.
 

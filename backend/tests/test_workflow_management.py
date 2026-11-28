@@ -458,12 +458,15 @@ def test_test_endpoint_submits_real_job(monkeypatch):
     assert body["submitted"] is True
     assert body["job_client_id"]
 
+    # The test endpoint now enqueues the job into the queue (status "pending");
+    # the dispatcher (not running in this test) would assign the prompt_id.
     with SessionLocal() as db:
         job = db.query(Job).filter_by(client_id=body["job_client_id"]).first()
         assert job is not None
         assert job.workflow_id == "qwen_image_gen_v1"
         assert job.workflow_version == 1
-        assert job.comfyui_prompt_id == "prompt-gen-test"
+        assert job.status == "pending"
+        assert job.comfyui_prompt_id is None
 
 
 def test_test_endpoint_reports_missing_required_input(monkeypatch):

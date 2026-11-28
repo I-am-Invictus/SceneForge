@@ -93,6 +93,56 @@ async def _resolve_image_input(
     return data, extension, width, height
 
 
+def _validate_inputs(spec: WorkflowSpec, values: dict, db: Session) -> None:
+    """Fast, ComfyUI-free validation so the user gets immediate feedback.
+
+    Catches missing required inputs and image references that no longer exist.
+    Type coercion / deeper structural errors are caught later at dispatch time
+    (the job then fails with the specific error), which keeps the enqueue path
+    fast enough to accept rapid, concurrent submissions.
+    """
+    for name, mapping in spec.inputs.items():
+        if not mapping.required:
+            continue
+        if mapping.type == "image":
+            value = values.get(name)
+            file_id = value.get("asset_file_id") if isinstance(value, dict) else None
+            if file_id is None:
+                raise JobError(422, f"Missing required input: {name}")
+            asset_file = db.get(AssetFile, int(file_id))
+            if asset_file is None:
+                raise JobError(422, f"Image input '{name}': asset file not found")
+            root = get_settings().data_dirs["base"].resolve()
+            path = (root / asset_file.stored_path).resolve()
+            if not path.is_relative_to(root) or not path.is_file():
+                raise JobError(409, f"Image input '{name}': stored file is missing")
+        elif mapping.auto == "source":
+            continue  # resolved from the source image at dispatch time
+        else:
+            if values.get(name) in (None, "") and mapping.default is None:
+                raise JobError(422, f"Missing required input: {name}")
+
+
+def _input_summary(spec: WorkflowSpec, values: dict) -> dict:
+    summary: dict[str, object] = {}
+    for name, value in values.items():
+        if name not in spec.inputs:
+            continue
+        if spec.inputs[name].type == "image" and isinstance(value, dict):
+            summary[name] = {"asset_file_id": value.get("asset_file_id")}
+        else:
+            summary[name] = value
+    return summary
+
+
+def _main_text(values: dict) -> str | None:
+    for name in ("prompt", "instruction", "composition_prompt"):
+        value = values.get(name)
+        if value:
+            return str(value)
+    return None
+
+
 async def submit_generation(
     db: Session,
     workflow_id: str,
@@ -100,6 +150,14 @@ async def submit_generation(
     ignore_enabled: bool = False,
     version: int | None = None,
 ) -> Job:
+    """Validate and enqueue a generation job.
+
+    This is deliberately fast and makes **no** ComfyUI calls: it persists the
+    job as ``pending`` and returns immediately. The :class:`JobDispatcher`
+    later prepares the ComfyUI graph (uploading inputs, applying values) and
+    submits the prompt, so the user is never blocked on ComfyUI and jobs
+    survive a restart while still in the queue.
+    """
     spec = get_spec(workflow_id, version)
     sync_registry(db)
     row = db.get(RegisteredWorkflow, workflow_id)
@@ -112,87 +170,107 @@ async def submit_generation(
     if integrity:
         raise JobError(500, "Workflow template error: " + "; ".join(integrity))
 
-    urls = get_effective_settings(db)
-    base_url = urls["comfyui_http_url"]
+    _validate_inputs(spec, values, db)
 
-    image_filenames: dict[str, str] = {}
-    source_dims: tuple[int, int] | None = None
-    input_summary: dict[str, object] = {}
-    for name, mapping in spec.inputs.items():
-        if mapping.type != "image" or name not in values:
-            continue
-        data, extension, width, height = await _resolve_image_input(
-            db, values[name]
-        )
-        upload_name = f"sf_{uuid.uuid4().hex[:12]}{extension}"
-        comfyui_name = await comfyui_client.upload_image(
-            base_url, upload_name, data, f"image/{extension.lstrip('.')}"
-        )
-        image_filenames[name] = comfyui_name
-        if source_dims is None:
-            source_dims = (width, height)
-        input_summary[name] = {
-            "asset_file_id": values[name].get("asset_file_id"),
-            "uploaded_as": comfyui_name,
-        }
-
-    effective = dict(values)
-    for name, mapping in spec.inputs.items():
-        if mapping.auto == "source" and effective.get(name) in (None, ""):
-            if source_dims is None:
-                raise JobError(422, f"Input {name} needs a source image")
-            effective[name] = _round_to_8(
-                source_dims[0] if name.lower().endswith("width") else source_dims[1]
-            )
-
-    workflow, applied = adapter.prepare(effective, image_filenames)
-    for name, value in values.items():
-        if name not in spec.inputs:
-            continue
-        if name in image_filenames:
-            continue
-        input_summary[name] = value
-
-    main_text = next(
-        (
-            str(applied[name])
-            for name in (
-                "prompt",
-                "instruction",
-                "composition_prompt",
-            )
-            if name in applied
-        ),
-        None,
-    )
-
-    client_id = comfyui_client.new_client_id()
     job = Job(
-        client_id=client_id,
+        client_id=comfyui_client.new_client_id(),
         workflow_id=workflow_id,
         workflow_version=spec.version,
         workflow_name=spec.name,
         category=spec.category,
-        status="queued",
-        prompt=main_text,
-        inputs_json=json.dumps(input_summary, default=str),
+        status="pending",
+        prompt=_main_text(values),
+        inputs_json=json.dumps(_input_summary(spec, values), default=str),
     )
     db.add(job)
     db.commit()
     db.refresh(job)
+    return job
+
+
+async def dispatch_job(db: Session, job: Job) -> Job:
+    """Prepare and submit a ``pending`` job to ComfyUI.
+
+    Called by the dispatcher for the next queued job(s). Uploads the job's
+    image inputs, applies the values to a fresh copy of the workflow template,
+    and submits the prompt. The job moves ``pending -> dispatching -> queued``
+    (with its ``comfyui_prompt_id``) on success, or ``-> failed`` on error.
+    """
+    try:
+        spec = get_spec(job.workflow_id, job.workflow_version)
+    except JobError as exc:
+        job.status = "failed"
+        job.error = f"Workflow no longer available: {exc.message}"
+        job.finished_at = utcnow()
+        db.commit()
+        return job
 
     try:
+        template = load_template(spec)
+        adapter = WorkflowAdapter(spec, template)
+        integrity = adapter.check_template_integrity()
+        if integrity:
+            raise JobError(500, "Workflow template error: " + "; ".join(integrity))
+    except JobError as exc:
+        job.status = "failed"
+        job.error = exc.message
+        job.finished_at = utcnow()
+        db.commit()
+        return job
+
+    # Crash guard: mark dispatching (committed) before the async ComfyUI work so
+    # a restart mid-dispatch can tell this job apart from a never-dispatched
+    # "pending" one and never re-submit it (which would run it twice).
+    job.status = "dispatching"
+    job.progress = 0.0
+    db.commit()
+
+    base_url = get_effective_settings(db)["comfyui_http_url"]
+    values = json.loads(job.inputs_json or "{}")
+
+    try:
+        image_filenames: dict[str, str] = {}
+        source_dims: tuple[int, int] | None = None
+        for name, mapping in spec.inputs.items():
+            if mapping.type != "image" or name not in values:
+                continue
+            ref = values[name]
+            file_id = ref.get("asset_file_id") if isinstance(ref, dict) else None
+            data, extension, width, height = await _resolve_image_input(
+                db, {"asset_file_id": file_id}
+            )
+            upload_name = f"sf_{uuid.uuid4().hex[:12]}{extension}"
+            comfyui_name = await comfyui_client.upload_image(
+                base_url, upload_name, data, f"image/{extension.lstrip('.')}"
+            )
+            image_filenames[name] = comfyui_name
+            if source_dims is None:
+                source_dims = (width, height)
+
+        effective = dict(values)
+        for name, mapping in spec.inputs.items():
+            if mapping.auto == "source" and effective.get(name) in (None, ""):
+                if source_dims is None:
+                    raise JobError(422, f"Input {name} needs a source image")
+                effective[name] = _round_to_8(
+                    source_dims[0]
+                    if name.lower().endswith("width")
+                    else source_dims[1]
+                )
+
+        workflow, _applied = adapter.prepare(effective, image_filenames)
         prompt_id = await comfyui_client.submit_prompt(
             base_url, workflow, comfyui_client.monitor_client_id
         )
-    except ComfyUIError as exc:
+    except (ComfyUIError, JobError) as exc:
         job.status = "failed"
         job.error = str(exc)
         job.finished_at = utcnow()
         db.commit()
-        raise JobError(502, f"ComfyUI rejected the prompt: {exc}") from exc
+        return job
 
     job.comfyui_prompt_id = prompt_id
+    job.status = "queued"
     db.commit()
     return job
 

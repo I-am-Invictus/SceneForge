@@ -1,6 +1,7 @@
 import json
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from sqlalchemy.orm import Session
 
 from app.database.db import get_db
@@ -150,6 +151,15 @@ async def add_output_reference(
         raise HTTPException(status_code=exc.status_code, detail=exc.message)
     db.refresh(job)
     return _serialize(job)
+
+
+@router.delete("/api/jobs/{client_id}", status_code=204)
+async def remove_job(client_id: str, db: Session = Depends(get_db)):
+    try:
+        job_outputs.remove_job(db, client_id)
+    except JobError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message)
+    return Response(status_code=204)
 
 
 @router.post("/api/jobs/{client_id}/cancel", response_model=JobOut)

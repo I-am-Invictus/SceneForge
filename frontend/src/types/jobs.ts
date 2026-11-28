@@ -18,6 +18,8 @@ export interface Workflow {
 }
 
 export type JobStatus =
+  | 'pending'
+  | 'dispatching'
   | 'queued'
   | 'running'
   | 'completed'
@@ -25,6 +27,16 @@ export type JobStatus =
   | 'interrupted'
 
 export const TERMINAL_STATUSES: JobStatus[] = ['completed', 'failed', 'interrupted']
+
+// Jobs that have not yet reached ComfyUI (SceneForge's own queue). These can be
+// removed; once submitted they can only be cancelled.
+export const NOT_STARTED_STATUSES: JobStatus[] = ['pending', 'dispatching']
+
+// Human-readable label for a status (pending/dispatching both read as "queued").
+export function statusLabel(status: JobStatus): string {
+  if (status === 'pending' || status === 'dispatching') return 'queued'
+  return status
+}
 
 export interface JobOutput {
   id: number
